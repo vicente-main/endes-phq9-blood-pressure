@@ -87,4 +87,4 @@ If you use this code, please cite the associated article (citation to be added u
 
 ## License
 
-To be determined by the authors.
+Released under the [MIT License](LICENSE).
