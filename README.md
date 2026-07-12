@@ -1,5 +1,7 @@
 # Depressive symptomatology (PHQ-9) and elevated blood pressure — ENDES 2019–2025
 
+[![DOI](https://zenodo.org/badge/1298665481.svg)](https://doi.org/10.5281/zenodo.21328300)
+
 Reproducible analysis pipeline for a cross-sectional study of the association between depressive
 symptomatology (PHQ-9) and elevated blood pressure in Peruvian adults, using Peru's Demographic and
 Family Health Survey (ENDES, 2019–2025; n = 191 757).
