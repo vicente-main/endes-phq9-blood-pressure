@@ -1,0 +1,10 @@
+﻿pandas==2.2.3
+numpy==2.2.3
+pyarrow==19.0.1
+dbfread==2.0.7
+scipy==1.15.2
+statsmodels==0.14.4
+scikit-learn==1.8.0
+rpy2==3.6.5
+matplotlib==3.10.8
+openpyxl==3.1.5

@@ -1,0 +1,55 @@
+# ---- Entornos y cachés ----
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Rhistory
+.RData
+.Rproj.user/
+
+# ---- Logs ----
+logs/
+
+# ---- Datos (microdatos ENDES / megabases: NO se redistribuyen aquí) ----
+# Los microdatos ENDES son de acceso público en el portal del INEI (ver README).
+# El repositorio deposita CÓDIGO, no datos.
+data/
+
+# ---- Documentos internos de trabajo (NO publicar en el repo) ----
+# Notas de agentes/IA, correspondencia editorial, borradores y guías de revista.
+AGENTS.md
+CLAUDE.md
+System Prompt.txt
+Instrucciones.txt
+comments_review.txt
+notas_redaccion_manuscrito.md
+PLOS_ONE_directrices.md
+README_REPRODUCIBILIDAD.md
+INFORME_*.md
+RESPUESTA_*.md
+/FIXES_RONDA_2026-07-09/
+/ENVIO_PLOS_ONE_2019-2025/
+/Trabajos Guía/
+
+# ---- Binarios / documentos pesados (no versionar) ----
+*.docx
+*.xlsx
+*.pdf
+*.zip
+*.parquet
+*.tif
+*.tiff
+*.png
+*.svg
+*.eps
+*.pptx
+*.sav
+*.dta
+*.dbf
+
+# ---- Temporales ----
+*.bak
+*.pathbak
+*.tmp
+~$*

@@ -1,0 +1,33 @@
+﻿{
+  "paths": {
+    "raw_archives_dir": "data/input/raw_endes",
+    "interim_dir": "data/interim",
+    "output_dir": "data/output",
+    "qc_dir": "data/output/qc",
+    "log_file": "logs/pipeline.log"
+  },
+  "years": [2019, 2020, 2021, 2022, 2023, 2024],
+  "analysis": {
+    "combined_year_divisor": 6,
+    "mice_num_imputations": 20,
+    "random_seed": 20260313,
+    "analysis_output_dir": "data/output/analysis",
+    "imputed_dir": "data/output/analysis/imputed",
+    "tables_dir": "data/output/analysis/tables",
+    "models_dir": "data/output/analysis/models",
+    "figures_dir": "data/output/analysis/figures",
+    "write_imputed_csv": false,
+    "r_home": "C:/Program Files/R/R-4.5.3",
+    "r_lib_user": "C:/Users/Trabajo/Documents/R/win-library/4.5"
+  },
+  "phases": {
+    "run_mice": true,
+    "run_vif": true,
+    "run_r_bridge": true
+  },
+  "output": {
+    "dataset_base_name": "endes_hta_depresion_2019_2024",
+    "write_csv": true,
+    "write_parquet": true
+  }
+}
