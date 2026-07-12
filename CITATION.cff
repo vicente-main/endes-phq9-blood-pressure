@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata from this file."
+title: "Reproducible analysis pipeline: depressive symptomatology (PHQ-9) and elevated blood pressure in Peruvian adults (ENDES 2019–2025)"
+type: software
+authors:
+  - family-names: "Cardenas-Golac"
+    given-names: "Rodrigo J."
+    orcid: "https://orcid.org/0009-0005-4444-1523"
+  - family-names: "Vilchez-Diaz"
+    given-names: "Vicente J."
+    orcid: "https://orcid.org/0009-0007-3755-8226"
+  - family-names: "Garcia-Ruiz"
+    given-names: "Oriana"
+    orcid: "https://orcid.org/0000-0002-7233-9703"
+  - family-names: "Sifuentes Vidigal"
+    given-names: "Samar Saraí"
+    orcid: "https://orcid.org/0009-0006-8564-8317"
+  - family-names: "Velarde Mera"
+    given-names: "Miguel Angel"
+    orcid: "https://orcid.org/0009-0009-6073-9767"
+version: "1.0.0"
+doi: "10.5281/zenodo.21328300"
+date-released: "2026-07-12"
+license: MIT
+repository-code: "https://github.com/vicente-main/endes-phq9-blood-pressure"
+url: "https://doi.org/10.5281/zenodo.21328300"
