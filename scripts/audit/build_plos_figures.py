@@ -192,7 +192,7 @@ def build_dag():
     ax.set_xlim(-0.9, 16.4); ax.set_ylim(-0.2, 10.4); ax.axis("off")
     ax.set_aspect("equal", adjustable="datalim")
 
-    ax.text(7.75, 10.25, "Structural confounders — included in Model 2 (main)",
+    ax.text(7.75, 10.75, "Structural confounders — included in Model 2 (main)",
             ha="center", va="center", fontsize=FS_, weight="bold", color=COLOR["confounder"]["edge"])
     confounders = [("EDAD", "Age", 1.7), ("SEXO", "Sex", 3.5), ("EDUC", "Education", 5.3),
                    ("AREA", "Area\n(urban/rural)", 7.1), ("ALTITUD", "Altitude", 8.9),
@@ -200,10 +200,10 @@ def build_dag():
                    ("ANIO", "Survey\nyear", 14.3)]
     cn = {}
     for k, lab, x in confounders:
-        cn[k] = _dbox(ax, x, 8.75, lab, "confounder", 1.72, 0.95, FC)
-    _dcorr(ax, (cn["EDUC"][0], cn["EDUC"][1] + cn["EDUC"][3] / 2), (cn["RIQUEZA"][0], cn["RIQUEZA"][1] + cn["RIQUEZA"][3] / 2))
-    _dcorr(ax, (cn["EDAD"][0], cn["EDAD"][1] + cn["EDAD"][3] / 2), (cn["ANIO"][0], cn["ANIO"][1] + cn["ANIO"][3] / 2), rad=-0.05)
-    ax.text(7.75, 9.62, "↔  correlations among confounders", ha="center", va="center",
+        cn[k] = _dbox(ax, x, 9.05, lab, "confounder", 1.72, 0.95, FC)
+    _dcorr(ax, (cn["EDUC"][0], cn["EDUC"][1] + cn["EDUC"][3] / 2), (cn["RIQUEZA"][0], cn["RIQUEZA"][1] + cn["RIQUEZA"][3] / 2), rad=-0.06)
+    _dcorr(ax, (cn["EDAD"][0], cn["EDAD"][1] + cn["EDAD"][3] / 2), (cn["ANIO"][0], cn["ANIO"][1] + cn["ANIO"][3] / 2), rad=-0.03)
+    ax.text(7.75, 10.25, "↔  correlations among confounders", ha="center", va="center",
             fontsize=FC, style="italic", color="#155724")
 
     phq = _dbox(ax, 1.5, 5.3, "Depressive\nsymptoms\n(PHQ-9)", "exposure", 2.05, 1.3, FN, "bold")
@@ -214,16 +214,16 @@ def build_dag():
     for i, (k, _l, x) in enumerate(confounders):
         src = _ep(cn[k], "bottom"); frac = (i + 1) / (len(confounders) + 1)
         near = x < mid
-        _darrow(ax, src, (px - pw / 2 + frac * pw, py + ph / 2), "confounder", lw=1.0 if near else 0.5, a=0.6 if near else 0.28)
-        _darrow(ax, src, (qx - qw / 2 + frac * qw, qy + qh / 2), "confounder", lw=0.5 if near else 1.0, a=0.28 if near else 0.6)
+        _darrow(ax, src, (px - pw / 2 + frac * pw, py + ph / 2), "confounder", lw=1.0 if near else 0.4, a=0.6 if near else 0.15)
+        _darrow(ax, src, (qx - qw / 2 + frac * qw, qy + qh / 2), "confounder", lw=0.4 if near else 1.0, a=0.15 if near else 0.6)
 
     med_t = [("IMC", "BMI", 5.0), ("TABACO", "Tobacco use\n(last 30 d)", 8.0), ("DIETA", "Diet quality", 11.0)]
     med_b = [("CINTURA", "Waist\ncircumference", 5.0), ("ALC", "Problematic\nalcohol use", 8.0), ("DIAB", "Diabetes\ndiagnosis", 11.0)]
     mn = {}
     for k, lab, x in med_t:
-        mn[k] = _dbox(ax, x, 6.9, lab, "mediator", 2.3, 0.9, FM)
+        mn[k] = _dbox(ax, x, 7.1, lab, "mediator", 2.3, 0.9, FM)
     for k, lab, x in med_b:
-        mn[k] = _dbox(ax, x, 3.7, lab, "mediator", 2.3, 0.9, FM)
+        mn[k] = _dbox(ax, x, 3.5, lab, "mediator", 2.3, 0.9, FM)
     for k, _l, x in med_t:
         _darrow(ax, _ep(phq, "top"), _ep(mn[k], "left"), "mediator", lw=1.0, a=0.75)
         _darrow(ax, _ep(mn[k], "right"), _ep(pae, "top"), "mediator", lw=1.0, a=0.75)
@@ -231,11 +231,11 @@ def build_dag():
         _darrow(ax, _ep(phq, "bottom"), _ep(mn[k], "left"), "mediator", lw=1.0, a=0.75)
         _darrow(ax, _ep(mn[k], "right"), _ep(pae, "bottom"), "mediator", lw=1.0, a=0.75)
     for sk, dk in [("EDAD", "IMC"), ("SEXO", "CINTURA"), ("RIQUEZA", "DIETA"), ("EDUC", "DIETA"), ("EDAD", "DIAB")]:
-        _darrow(ax, _ep(cn[sk], "bottom"), _ep(mn[dk], "top"), "confounder", lw=0.8, a=0.5)
+        _darrow(ax, _ep(cn[sk], "bottom"), _ep(mn[dk], "top"), "confounder", lw=0.6, a=0.38)
 
-    ax.text(7.75, 2.75, "Potential mediators — added in Model 3 (exploratory)",
+    ax.text(7.75, 2.55, "Potential mediators — added in Model 3 (exploratory)",
             ha="center", va="center", fontsize=FS_, weight="bold", color=COLOR["mediator"]["edge"])
-    u = _dbox(ax, 7.75, 1.7, "U: unmeasured factors\n(chronic stress, sleep, comorbidity,\nprior adherence, detection bias)",
+    u = _dbox(ax, 7.75, 1.4, "U: unmeasured factors\n(chronic stress, sleep, comorbidity,\nprior adherence, detection bias)",
               "unmeasured", 4.7, 1.0, FU, dashed=True)
     _darrow(ax, _ep(u, "left"), _ep(phq, "bottom"), "unmeasured", cs="arc3,rad=0.15", lw=0.9, a=0.65, ls="--")
     _darrow(ax, _ep(u, "right"), _ep(pae, "bottom"), "unmeasured", cs="arc3,rad=-0.15", lw=0.9, a=0.65, ls="--")
