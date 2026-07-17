@@ -1,7 +1,7 @@
 """Genera las 4 figuras del envio CUMPLIENDO el estandar tecnico de PLOS ONE:
 TIFF LZW, RGB (sin canal alfa), <= 2250 px de ancho y <= 2625 px de alto,
 300 dpi, fuente Arial, SIN titulo/numero/leyenda incrustados (van en el .docx),
-y nombres Fig1.tif / S1_Fig.tif / S2_Fig.tif / S3_Fig.tif.
+y nombres Fig1.tif (STROBE) / Fig2.tif (spline) / S1_Fig.tif (DAG) / S2_Fig.tif (forest).
 
 Fuentes de datos: data/output_2025/ (run 2019-2025).
 """
@@ -26,12 +26,15 @@ QC = ROOT / "data" / "output_2025" / "qc"
 MAX_W, MAX_H = 2250, 2625
 
 COLOR = {
-    "confounder": {"fill": "#D4EDDA", "edge": "#155724", "arrow": "#2E7D32"},
+    "confounder": {"fill": "#D6EAD8", "edge": "#1B5E20", "arrow": "#4C8C4A"},
     "exposure":   {"fill": "#90CAF9", "edge": "#0D47A1", "arrow": "#0D47A1"},
     "outcome":    {"fill": "#F5B7B1", "edge": "#922B21", "arrow": "#922B21"},
     "mediator":   {"fill": "#FFE0B2", "edge": "#E65100", "arrow": "#E65100"},
-    "unmeasured": {"fill": "#F3E5F5", "edge": "#6A1B9A", "arrow": "#6A1B9A"},
+    "unmeasured": {"fill": "#EDE1F3", "edge": "#6A1B9A", "arrow": "#6A1B9A"},
 }
+# Muted-but-visible green for the background confounder edges (fixes the previous
+# alpha=0.15 "invisible back lines" problem while keeping them behind the nodes).
+CONF_BG = "#7FB08A"
 
 
 def plos_save(fig, name, render_dpi=600, final_dpi=300):
@@ -48,7 +51,7 @@ def plos_save(fig, name, render_dpi=600, final_dpi=300):
     print(f"  {name:12s} {im.size[0]}x{im.size[1]}px RGB ({im.size[0]/final_dpi:.2f}x{im.size[1]/final_dpi:.2f} in)")
 
 
-# ---------------------------------------------------------------- S1 spline
+# ---------------------------------------------------------------- Fig 2 spline (principal)
 def build_spline():
     d = pd.read_csv(FIG / "spline_curve_pooled.csv")
     d = d[d["summary_type"] == "spline_curve"].copy()
@@ -62,12 +65,14 @@ def build_spline():
     for k in (0, 4, 9, 14):
         ax.axvline(k, color="#888888", linewidth=0.8, linestyle=":")
     ax.set_xlabel("PHQ-9 score", fontsize=11)
-    ax.set_ylabel("Adjusted prevalence of elevated BP (%)", fontsize=11)
+    # Auditoria 2026-07-16 (hallazgo #5): la curva es ahora la prevalencia marginal
+    # estandarizada (g-computation ponderada), no una prediccion sobre un perfil modal.
+    ax.set_ylabel("Marginal standardized prevalence\nof elevated BP (%)", fontsize=11)
     ax.tick_params(labelsize=10)
     ax.legend(loc="upper center", fontsize=10, frameon=True)
     ax.margins(x=0.01)
     fig.tight_layout()
-    plos_save(fig, "S1_Fig.tif")
+    plos_save(fig, "Fig2.tif")   # spline = figura principal (auditoria 2026-07-16)
 
 
 # ---------------------------------------------------------------- S3 forest
@@ -96,7 +101,7 @@ def build_forest():
     ax.tick_params(axis="x", labelsize=10)
     ax.grid(axis="x", color="#EEEEEE", linewidth=0.6); ax.set_axisbelow(True)
     fig.tight_layout()
-    plos_save(fig, "S3_Fig.tif")
+    plos_save(fig, "S2_Fig.tif")  # forest = suplementaria (renumerada)  # forest = suplementaria (renumerada)
 
 
 # ---------------------------------------------------------------- Fig1 STROBE
@@ -173,82 +178,96 @@ def _ep(node, d):
             "left": (x - w / 2, y), "right": (x + w / 2, y)}[d]
 
 
-def _darrow(ax, src, dst, role, cs="arc3,rad=0", lw=0.7, a=0.55, z=2, ls="-"):
+def _darrow(ax, src, dst, role, cs="arc3,rad=0", lw=0.7, a=0.55, z=2, ls="-", color=None):
     ax.add_patch(FancyArrowPatch(src, dst, arrowstyle="-|>", mutation_scale=9,
-                 linewidth=lw, color=COLOR[role]["arrow"], alpha=a,
-                 connectionstyle=cs, zorder=z, linestyle=ls))
+                 linewidth=lw, color=color or COLOR[role]["arrow"], alpha=a,
+                 connectionstyle=cs, zorder=z, linestyle=ls, capstyle="round"))
 
 
-def _dcorr(ax, src, dst, rad=-0.18):
-    ax.add_patch(FancyArrowPatch(src, dst, arrowstyle="<|-|>", mutation_scale=6,
-                 linewidth=0.8, color="#155724", alpha=0.45,
-                 connectionstyle=f"arc3,rad={rad}", linestyle="--", zorder=1))
+def _dcorr(ax, src, dst, rad=-0.10):
+    ax.add_patch(FancyArrowPatch(src, dst, arrowstyle="<|-|>", mutation_scale=7,
+                 linewidth=1.0, color=COLOR["confounder"]["edge"], alpha=0.6,
+                 connectionstyle=f"arc3,rad={rad}", linestyle=(0, (4, 3)), zorder=4))
 
 
 def build_dag():
-    # Fuentes finales (figura de 7.6"): confusores 6.8, nodos 9.5, mediadores 7.5
-    FN, FC, FM, FS_, FU, FL = 9.5, 6.8, 7.5, 8.5, 7.0, 7.5
-    fig, ax = plt.subplots(figsize=(7.6, 6.3))
-    ax.set_xlim(-0.9, 16.4); ax.set_ylim(-0.2, 10.4); ax.axis("off")
+    # Rediseño legibilidad (2026-07-14): aristas confusor->exp/desenlace curvadas con
+    # jerarquia visual (cercana solida y visible; lejana mas fina y tenue pero VISIBLE,
+    # bordeando el corredor central en vez de cruzarlo). Antes las lejanas iban a
+    # alpha=0.15 (casi invisibles) y en recta cruzando toda la banda de mediadores.
+    FN, FC, FM, FS_, FU, FL = 10.5, 8.0, 8.5, 9.5, 8.0, 8.5
+    fig, ax = plt.subplots(figsize=(9.2, 7.2))
+    ax.set_xlim(-0.6, 16.6); ax.set_ylim(-0.4, 12.2); ax.axis("off")
     ax.set_aspect("equal", adjustable="datalim")
 
-    ax.text(7.75, 10.75, "Structural confounders — included in Model 2 (main)",
+    CY = 5.6
+    phq = _dbox(ax, 1.35, CY, "Depressive\nsymptoms\n(PHQ-9)", "exposure", 2.15, 1.45, FN, "bold")
+    pae = _dbox(ax, 15.0, CY, "Elevated\nblood\npressure", "outcome", 2.15, 1.45, FN, "bold")
+
+    ax.text(8.2, 11.75, "Structural confounders — adjusted in Model 2 (main)",
             ha="center", va="center", fontsize=FS_, weight="bold", color=COLOR["confounder"]["edge"])
-    confounders = [("EDAD", "Age", 1.7), ("SEXO", "Sex", 3.5), ("EDUC", "Education", 5.3),
-                   ("AREA", "Area\n(urban/rural)", 7.1), ("ALTITUD", "Altitude", 8.9),
-                   ("RIQUEZA", "Wealth\nquintile", 10.7), ("VPAR", "Intimate-\npartner\nviolence", 12.5),
+    confounders = [("EDAD", "Age", 2.4), ("SEXO", "Sex", 4.1), ("EDUC", "Education", 5.8),
+                   ("AREA", "Area\n(urban/rural)", 7.5), ("ALTITUD", "Altitude", 9.2),
+                   ("RIQUEZA", "Wealth\nquintile", 10.9), ("VPAR", "Intimate-\npartner\nviolence", 12.6),
                    ("ANIO", "Survey\nyear", 14.3)]
     cn = {}
+    CBY = 10.05
     for k, lab, x in confounders:
-        cn[k] = _dbox(ax, x, 9.05, lab, "confounder", 1.72, 0.95, FC)
-    _dcorr(ax, (cn["EDUC"][0], cn["EDUC"][1] + cn["EDUC"][3] / 2), (cn["RIQUEZA"][0], cn["RIQUEZA"][1] + cn["RIQUEZA"][3] / 2), rad=-0.06)
-    _dcorr(ax, (cn["EDAD"][0], cn["EDAD"][1] + cn["EDAD"][3] / 2), (cn["ANIO"][0], cn["ANIO"][1] + cn["ANIO"][3] / 2), rad=-0.03)
-    ax.text(7.75, 10.25, "↔  correlations among confounders", ha="center", va="center",
-            fontsize=FC, style="italic", color="#155724")
+        cn[k] = _dbox(ax, x, CBY, lab, "confounder", 1.62, 0.98, FC)
+    _dcorr(ax, (cn["EDUC"][0], cn["EDUC"][1] + 0.49), (cn["RIQUEZA"][0], cn["RIQUEZA"][1] + 0.49), rad=-0.10)
+    _dcorr(ax, (cn["EDAD"][0], cn["EDAD"][1] + 0.49), (cn["ANIO"][0], cn["ANIO"][1] + 0.49), rad=-0.05)
+    ax.text(8.2, 11.28, "↔  correlations among confounders", ha="center", va="center",
+            fontsize=FC - 0.5, style="italic", color=COLOR["confounder"]["edge"])
 
-    phq = _dbox(ax, 1.5, 5.3, "Depressive\nsymptoms\n(PHQ-9)", "exposure", 2.05, 1.3, FN, "bold")
-    pae = _dbox(ax, 14.5, 5.3, "Elevated\nblood\npressure", "outcome", 2.05, 1.3, FN, "bold")
     ax.add_patch(FancyArrowPatch(_ep(phq, "right"), _ep(pae, "left"), arrowstyle="-|>",
-                 mutation_scale=18, linewidth=2.2, color="#1F2937", alpha=0.95, zorder=5))
+                 mutation_scale=20, linewidth=2.6, color="#1F2937", alpha=0.97, zorder=7))
     px, py, pw, ph = phq; qx, qy, qw, qh = pae; mid = (px + qx) / 2
-    for i, (k, _l, x) in enumerate(confounders):
-        src = _ep(cn[k], "bottom"); frac = (i + 1) / (len(confounders) + 1)
-        near = x < mid
-        _darrow(ax, src, (px - pw / 2 + frac * pw, py + ph / 2), "confounder", lw=1.0 if near else 0.4, a=0.6 if near else 0.15)
-        _darrow(ax, src, (qx - qw / 2 + frac * qw, qy + qh / 2), "confounder", lw=0.4 if near else 1.0, a=0.15 if near else 0.6)
+    for k, _l, x in confounders:
+        src = _ep(cn[k], "bottom")
+        near_phq = x < mid
+        dst_phq = (px + pw / 2 - 0.15, py + ph / 2 - 0.12)
+        dst_pae = (qx - qw / 2 + 0.15, qy + qh / 2 - 0.12)
+        if near_phq:
+            _darrow(ax, src, dst_phq, "confounder", cs="arc3,rad=0.16", lw=1.15, a=0.80, color=CONF_BG)
+            _darrow(ax, src, dst_pae, "confounder", cs="arc3,rad=0.42", lw=0.8, a=0.45, color=CONF_BG)
+        else:
+            _darrow(ax, src, dst_pae, "confounder", cs="arc3,rad=-0.16", lw=1.15, a=0.80, color=CONF_BG)
+            _darrow(ax, src, dst_phq, "confounder", cs="arc3,rad=-0.42", lw=0.8, a=0.45, color=CONF_BG)
 
-    med_t = [("IMC", "BMI", 5.0), ("TABACO", "Tobacco use\n(last 30 d)", 8.0), ("DIETA", "Diet quality", 11.0)]
-    med_b = [("CINTURA", "Waist\ncircumference", 5.0), ("ALC", "Problematic\nalcohol use", 8.0), ("DIAB", "Diabetes\ndiagnosis", 11.0)]
+    med_t = [("IMC", "BMI", 5.6), ("TABACO", "Tobacco use\n(last 30 d)", 8.2), ("DIETA", "Diet quality", 10.8)]
+    med_b = [("CINTURA", "Waist\ncircumference", 5.6), ("ALC", "Problematic\nalcohol use", 8.2), ("DIAB", "Diabetes\ndiagnosis", 10.8)]
     mn = {}
     for k, lab, x in med_t:
-        mn[k] = _dbox(ax, x, 7.1, lab, "mediator", 2.3, 0.9, FM)
+        mn[k] = _dbox(ax, x, 7.35, lab, "mediator", 2.25, 0.92, FM)
     for k, lab, x in med_b:
-        mn[k] = _dbox(ax, x, 3.5, lab, "mediator", 2.3, 0.9, FM)
+        mn[k] = _dbox(ax, x, 3.85, lab, "mediator", 2.25, 0.92, FM)
     for k, _l, x in med_t:
-        _darrow(ax, _ep(phq, "top"), _ep(mn[k], "left"), "mediator", lw=1.0, a=0.75)
-        _darrow(ax, _ep(mn[k], "right"), _ep(pae, "top"), "mediator", lw=1.0, a=0.75)
+        _darrow(ax, _ep(phq, "top"), _ep(mn[k], "left"), "mediator", cs="arc3,rad=-0.05", lw=1.15, a=0.85)
+        _darrow(ax, _ep(mn[k], "right"), _ep(pae, "top"), "mediator", cs="arc3,rad=-0.05", lw=1.15, a=0.85)
     for k, _l, x in med_b:
-        _darrow(ax, _ep(phq, "bottom"), _ep(mn[k], "left"), "mediator", lw=1.0, a=0.75)
-        _darrow(ax, _ep(mn[k], "right"), _ep(pae, "bottom"), "mediator", lw=1.0, a=0.75)
+        _darrow(ax, _ep(phq, "bottom"), _ep(mn[k], "left"), "mediator", cs="arc3,rad=0.05", lw=1.15, a=0.85)
+        _darrow(ax, _ep(mn[k], "right"), _ep(pae, "bottom"), "mediator", cs="arc3,rad=0.05", lw=1.15, a=0.85)
     for sk, dk in [("EDAD", "IMC"), ("SEXO", "CINTURA"), ("RIQUEZA", "DIETA"), ("EDUC", "DIETA"), ("EDAD", "DIAB")]:
-        _darrow(ax, _ep(cn[sk], "bottom"), _ep(mn[dk], "top"), "confounder", lw=0.6, a=0.38)
+        _darrow(ax, _ep(cn[sk], "bottom"), _ep(mn[dk], "top"), "confounder", lw=0.7, a=0.4, ls=(0, (3, 2)), color=CONF_BG)
 
-    ax.text(7.75, 2.55, "Potential mediators — added in Model 3 (exploratory)",
+    ax.text(8.2, 2.75, "Potential mediators — added only in Model 3 (exploratory)",
             ha="center", va="center", fontsize=FS_, weight="bold", color=COLOR["mediator"]["edge"])
-    u = _dbox(ax, 7.75, 1.4, "U: unmeasured factors\n(chronic stress, sleep, comorbidity,\nprior adherence, detection bias)",
-              "unmeasured", 4.7, 1.0, FU, dashed=True)
-    _darrow(ax, _ep(u, "left"), _ep(phq, "bottom"), "unmeasured", cs="arc3,rad=0.15", lw=0.9, a=0.65, ls="--")
-    _darrow(ax, _ep(u, "right"), _ep(pae, "bottom"), "unmeasured", cs="arc3,rad=-0.15", lw=0.9, a=0.65, ls="--")
+    u = _dbox(ax, 8.2, 1.35, "U: unmeasured factors\n(chronic stress, sleep, comorbidity,\nprior adherence, detection bias)",
+              "unmeasured", 4.8, 1.05, FU, dashed=True)
+    # Convex outward arcs (bow toward the bottom-outer corners) so they mirror the
+    # mediator lines and stay clear of the "Potential mediators" label above U.
+    _darrow(ax, _ep(u, "left"), _ep(phq, "bottom"), "unmeasured", cs="arc3,rad=-0.32", lw=1.1, a=0.7, ls="--")
+    _darrow(ax, _ep(u, "right"), _ep(pae, "bottom"), "unmeasured", cs="arc3,rad=0.32", lw=1.1, a=0.7, ls="--")
 
     legend = [("Confounder (Model 2)", "confounder"), ("Exposure (PHQ-9)", "exposure"),
               ("Outcome (elevated BP)", "outcome"), ("Mediator (Model 3)", "mediator"),
               ("U: unmeasured (hypothetical)", "unmeasured")]
     handles = [Patch(facecolor=COLOR[r]["fill"], edgecolor=COLOR[r]["edge"],
                      linestyle="--" if r == "unmeasured" else "-", label=t) for t, r in legend]
-    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, -0.01),
-              ncol=3, fontsize=FL, frameon=False, handlelength=1.4,
+    ax.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.02),
+              ncol=3, fontsize=FL, frameon=False, handlelength=1.5,
               columnspacing=1.8, handletextpad=0.5)
-    plos_save(fig, "S2_Fig.tif")
+    plos_save(fig, "S1_Fig.tif")  # DAG = suplementaria (renumerada)
 
 
 def main():

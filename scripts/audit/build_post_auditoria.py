@@ -87,12 +87,13 @@ TERM_LABELS: dict[str, str] = {
     "factor(HV270)3": "Q3 — Medio (vs Q1)",
     "factor(HV270)4": "Q4 — Rico (vs Q1)",
     "factor(HV270)5": "Q5 — Más rico (vs Q1)",
-    # Educación
-    "factor(QS25N)1": "Sin educación / inicial",
-    "factor(QS25N)2": "Primaria",
-    "factor(QS25N)3": "Secundaria",
-    "factor(QS25N)4": "Superior no universitaria",
-    "factor(QS25N)5": "Superior universitaria",
+    # Educación — diccionario INEI real (auditoría 2026-07-16): 0 Sin nivel/inicial
+    # (referencia), 1 Primaria, 2 Secundaria, 3 Sup. no univ., 4 Sup. univ., 5 Postgrado.
+    "factor(QS25N)1": "Primaria",
+    "factor(QS25N)2": "Secundaria",
+    "factor(QS25N)3": "Superior no universitaria",
+    "factor(QS25N)4": "Superior universitaria",
+    "factor(QS25N)5": "Postgrado",
     # Año
     "factor(ANIO)2020": "Año 2020 (vs 2019)",
     "factor(ANIO)2021": "Año 2021 (vs 2019)",
@@ -100,8 +101,8 @@ TERM_LABELS: dict[str, str] = {
     "factor(ANIO)2023": "Año 2023 (vs 2019)",
     "factor(ANIO)2024": "Año 2024 (vs 2019)",
     # VPAR
-    "factor(VIOLENCIA_PAREJA)1": "Violencia leve / única",
-    "factor(VIOLENCIA_PAREJA)2": "Violencia múltiple / severa",
+    "factor(VIOLENCIA_PAREJA)1": "Con violencia (física)",
+    "factor(VIOLENCIA_PAREJA)2": "Sin pareja",
     # Alcohol problemático
     "factor(ALCOHOL_PROBLEMATICO)1": "Consumo problemático",
     "factor(ALCOHOL_PROBLEMATICO)NaN": "No aplica (no consume)",
@@ -287,6 +288,13 @@ def fmt_int_es(x) -> str:
     if x is None or (isinstance(x, float) and np.isnan(x)):
         return "—"
     return f"{int(x):,}".replace(",", " ")
+
+
+def spline_pooled_p(row: pd.Series) -> float:
+    """Usa D2 como inferencia primaria y conserva compatibilidad con outputs antiguos."""
+    if "d2_p_value" in row.index and pd.notna(row["d2_p_value"]):
+        return float(row["d2_p_value"])
+    return float(row["median_p_value"])
 
 
 # ---------------------------------------------------------------------------
@@ -539,7 +547,7 @@ def build_tabla_3(out_dir: Path) -> None:
 
     add_footer_notes(ws, row + 1, [
         "PR: razón de prevalencia (cuasi-Poisson, link log). IC 95% y p combinados por reglas de Rubin sobre 20 imputaciones MICE. n = 164 719 (constante en los tres modelos).",
-        "Imputación: las 10 covariables MAR fueron imputadas; la exposición PHQ-9 y el desenlace PA elevada NO se imputaron. Detalle en Métodos del manuscrito.",
+        "Imputación: las 9 covariables MAR fueron imputadas; educación se resolvió por la compuerta estructural QS24 y no se imputó. La exposición PHQ-9 y el desenlace PA elevada tampoco se imputaron. Detalle en Métodos del manuscrito.",
         "Modelo 1: PHQ-9 crudo. Modelo 2 (principal): + edad, sexo, educación, área, riqueza, VPAR, año y altitud. Modelo 3 (exploratorio): + IMC, cintura, consumo de tabaco, consumo problemático de alcohol, dieta y diagnóstico de diabetes (potenciales mediadores).",
         "Altitud (factor(ALTITUD_CAT3)) incorporada al ajuste estructural como confusor geográfico (enmienda 2026-06-01). Diseño: svydesign(id=~HV001, strata=~HV022, weights=~PESO_FINAL, nest=TRUE), survey.lonely.psu='adjust'. Intercepto omitido (disponible en CSV fuente).",
     ], 4)
@@ -571,7 +579,7 @@ def build_tabla_3_wide(out_dir: Path) -> None:
         [
             "PR: razón de prevalencia (cuasi-Poisson, link log). IC 95% y p combinados por Rubin sobre 20 imputaciones MICE. n = 164 719 (constante).",
             "Modelo 2 (principal) destacado en azul medio. Términos en negrita: exposición principal PHQ-9. Altitud incorporada como confusor (enmienda 2026-06-01).",
-            "Imputación: 10 covariables MAR; PHQ-9 y PA elevada NO. '—' indica término no incluido en el modelo.",
+            "Imputación: 9 covariables MAR; educación, PHQ-9 y PA elevada no se imputaron. '—' indica término no incluido en el modelo.",
         ],
     )
 
@@ -658,7 +666,7 @@ def build_tabla_4(out_dir: Path) -> None:
     add_footer_notes(ws, row + 1, [
         "PR: razón de prevalencia (cuasi-Poisson, link log). Pooled sobre 20 imputaciones MICE (Rubin).",
         "No adherencia: desenlace = NO_ADHERENCIA_HTA en personas con DX previo (n = 14 943). Descontrol: desenlace = PA elevada en personas con DX previo (n = 14 956).",
-        "Mismas covariables que Modelo 2 estructural. Las 10 covariables MAR fueron imputadas; el desenlace NO. Ver Métodos del manuscrito.",
+        "Mismas covariables que Modelo 2 estructural. Las 9 covariables MAR fueron imputadas; educación y el desenlace no se imputaron. Ver Métodos del manuscrito.",
         "Diseño: svydesign(id=~HV001, strata=~HV022, weights=~PESO_FINAL, nest=TRUE). Intercepto omitido (CSV fuente).",
     ], 4)
 
@@ -707,7 +715,7 @@ def build_tabla_5(out_dir: Path) -> None:
                        "Modelo 2 con link logit", "OR por punto adicional de PHQ-9", *r,
                        "OR consistente con la PR; descarta sesgo de especificación cuasi-Poisson."))
     # Spline
-    spline_p = float(df_spline.iloc[0]["median_p_value"])
+    spline_p = spline_pooled_p(df_spline.iloc[0])
     scenarios.append(("Spline cúbica restringida (linealidad)",
                        "Curva spline (PHQ-9)", "p de no-linealidad pooled", None, None, None, spline_p, None,
                        f"No se rechaza linealidad (p = {fmt_p(spline_p)}); el coeficiente lineal del Modelo 2 es interpretable."))
@@ -979,7 +987,7 @@ def build_tabla_S3(out_dir: Path) -> None:
         "PR: cuasi-Poisson log link, pooled sobre 20 imputaciones MICE (Rubin). n: sin 2020 = 144 456; resto = 164 719.",
         "Interacción PHQ-9 × Mujer significativa (p = 0,001): asociación inversa más pronunciada en hombres.",
         "Interacción PHQ-9 × Año: sin evidencia consistente de modificación temporal.",
-        "Imputación: 10 covariables MAR; PHQ-9 y PA elevada NO. Ver Métodos del manuscrito.",
+        "Imputación: 9 covariables MAR; educación, PHQ-9 y PA elevada no se imputaron. Ver Métodos del manuscrito.",
     ], 4)
     ws.column_dimensions["A"].width = 50
     ws.column_dimensions["B"].width = 10
@@ -1054,7 +1062,7 @@ def build_tabla_S4(out_dir: Path) -> None:
     # Hoja Figura S1 Spline (curva)
     ws = wb.create_sheet("Figura_S1_curva")
     add_title_row(ws, 1, "Datos de Figura S1 — Curva spline PHQ-9 (pooled 20 imputaciones)", 6)
-    style_header_row(ws, 2, ["PHQ-9", "Estimación (log-PR)", "EE", "IC 95% inferior", "IC 95% superior", "Prevalencia ajustada (%)"])
+    style_header_row(ws, 2, ["PHQ-9", "Prevalencia marginal", "EE", "IC 95% inferior", "IC 95% superior", "Prevalencia marginal (%)"])
     spline_sorted = spline.sort_values("label").reset_index(drop=True)
     row = 3
     for _, r in spline_sorted.iterrows():
@@ -1063,7 +1071,7 @@ def build_tabla_S4(out_dir: Path) -> None:
         ws.cell(row=row, column=3, value=fmt_decimal(r["std_error"], 4)).alignment = ALIGN_RIGHT
         ws.cell(row=row, column=4, value=fmt_decimal(r["ci_low"], 4)).alignment = ALIGN_RIGHT
         ws.cell(row=row, column=5, value=fmt_decimal(r["ci_high"], 4)).alignment = ALIGN_RIGHT
-        ws.cell(row=row, column=6, value=fmt_decimal(np.exp(r["estimate"]) * 100, 2)).alignment = ALIGN_RIGHT
+        ws.cell(row=row, column=6, value=fmt_decimal(r["estimate"] * 100, 2)).alignment = ALIGN_RIGHT
         row += 1
     ws.column_dimensions["A"].width = 8
     for c in range(2, 7):
@@ -1072,15 +1080,15 @@ def build_tabla_S4(out_dir: Path) -> None:
     # Hoja Figura S1 Spline (no-linealidad pooled)
     ws = wb.create_sheet("Figura_S1_nolinealidad")
     add_title_row(ws, 1, "Datos de Figura S1 — Resumen de no-linealidad pooled", 4)
-    style_header_row(ws, 2, ["Estadístico Wald medio", "p mediana", "p mínima", "p máxima"])
+    style_header_row(ws, 2, ["Estadístico D2", "p D2 pooled", "p mínima", "p máxima"])
     r = spline_nl.iloc[0]
-    ws.cell(row=3, column=1, value=fmt_decimal(r["mean_wald_statistic"], 2)).alignment = ALIGN_RIGHT
-    ws.cell(row=3, column=2, value=fmt_p(r["median_p_value"])).alignment = ALIGN_CENTER
+    ws.cell(row=3, column=1, value=fmt_decimal(r.get("d2_statistic"), 2)).alignment = ALIGN_RIGHT
+    ws.cell(row=3, column=2, value=fmt_p(spline_pooled_p(r))).alignment = ALIGN_CENTER
     ws.cell(row=3, column=3, value=fmt_p(r["min_p_value"])).alignment = ALIGN_CENTER
     ws.cell(row=3, column=4, value=fmt_p(r["max_p_value"])).alignment = ALIGN_CENTER
     add_footer_notes(ws, 5, [
         "p > 0,05 indica que no hay evidencia de no-linealidad → el coeficiente lineal de PHQ-9 en Modelo 2 es interpretable.",
-        "Wald con 2 gl (3 nodos internos del spline cúbico restringido: 0, 4, 9, 14).",
+        "Prueba D2 pooled con 2 gl; nodos del spline cúbico restringido en 0, 4, 9 y 14.",
     ], 4)
     for c in range(1, 5):
         ws.column_dimensions[get_column_letter(c)].width = 20
@@ -1116,6 +1124,8 @@ def copy_figures(out_principal: Path, out_suplementario: Path) -> None:
 
 
 def write_leyendas(out_principal: Path, out_suplementario: Path) -> None:
+    spline_meta = pd.read_csv(ANALYSIS / "figures" / "spline_nonlinearity_summary.csv").iloc[0]
+    spline_p = fmt_p(spline_pooled_p(spline_meta))
     principal_text = (
         "Leyendas de figuras principales (RPMESP)\n"
         "\n"
@@ -1132,10 +1142,10 @@ def write_leyendas(out_principal: Path, out_suplementario: Path) -> None:
     supl_text = (
         "Leyendas de figuras suplementarias\n"
         "\n"
-        "Figura S1. Curva spline cúbica restringida de la prevalencia ajustada de presión arterial elevada según el "
+        "Figura S1. Curva spline cúbica restringida de la prevalencia marginal estandarizada de presión arterial elevada según el "
         "puntaje PHQ-9, pooled sobre 20 imputaciones MICE. Bandas: intervalo de confianza al 95% (Rubin). Nodos en "
         "PHQ-9 = 0, 4, 9, 14. La región sombreada en gris (PHQ-9 > 20) contiene < 1,2 % de la muestra; el "
-        "histograma marginal inferior muestra la densidad de PHQ-9. La p mediana de no-linealidad pooled fue 0,251 "
+        f"histograma marginal inferior muestra la densidad de PHQ-9. La prueba D2 pooled de no-linealidad fue p = {spline_p} "
         "(no se rechaza linealidad). La figura se conserva como verificación de la forma funcional del Modelo 2 "
         "estructural, no como hallazgo principal. PHQ-9: Patient Health Questionnaire-9; IC 95%: intervalo de "
         "confianza del 95%.\n"
@@ -1143,8 +1153,8 @@ def write_leyendas(out_principal: Path, out_suplementario: Path) -> None:
         "Figura S2. Grafo dirigido acíclico (DAG) que ilustra la estructura causal del estudio, con flujo izquierda → "
         "derecha en el eje principal exposición → mediadores → desenlace. La flecha negra gruesa entre PHQ-9 y PA "
         "elevada representa el efecto total a estimar. Los confusores estructurales (verde) están incluidos en el "
-        "Modelo 2 (principal): edad, sexo, educación, área de residencia, quintil de riqueza, violencia de pareja y "
-        "año del estudio; los arcos dashed bidireccionales entre EDUC ↔ RIQUEZA y EDAD ↔ AÑO indican correlaciones "
+        "Modelo 2 (principal): edad, sexo, educación, área de residencia, quintil de riqueza, violencia de pareja, "
+        "año del estudio y altitud; los arcos dashed bidireccionales entre EDUC ↔ RIQUEZA y EDAD ↔ AÑO indican correlaciones "
         "esperadas entre confusores. Los mediadores potenciales (naranja) están en caminos causales dirigidos PHQ-9 "
         "→ PA elevada y se añaden al Modelo 3 (exploratorio): IMC y circunferencia abdominal (vía metabólica), "
         "consumo de tabaco (últimos 30 días) y consumo problemático de alcohol (vía conductual), calidad de la dieta "
@@ -1211,13 +1221,14 @@ def write_readme(out_dir: Path) -> None:
         "(pruebas Rao-Scott). 'Pooled sobre 20 imputaciones' se refiere a este procedimiento,\n"
         "NO a que cada variable haya sido imputada.\n"
         "\n"
-        "  Variables imputadas (MAR, 10 covariables listadas en mice_manifest.json):\n"
-        "    edad, sexo, educación, área de residencia, riqueza, violencia de pareja,\n"
+        "  Variables imputadas (MAR, 9 covariables listadas en mice_manifest.json):\n"
+        "    edad, sexo, área de residencia, riqueza, violencia de pareja,\n"
         "    IMC, circunferencia abdominal, calidad de dieta, diagnóstico de diabetes (QS109).\n"
         "\n"
         "  Variables NO imputadas:\n"
         "    - Desenlace: PA elevada (los casos sin medición válida se excluyen en STROBE).\n"
         "    - Exposición: PHQ-9 (se prorratea cuando faltan 1-2 ítems; ≥3 ítems faltantes excluye).\n"
+        "    - Educación (QS25N): compuerta QS24 resuelta de forma determinística; no imputada.\n"
         "    - Saltos estructurales del cuestionario: QS201, ALCOHOL_PROBLEMATICO\n"
         "      (NMAR por diseño; mantienen 'No aplica' como categoría explícita).\n"
         "    - TIEMPO_DX_HTA_MESES (excluida formalmente del estudio por ausencia de datos crudos).\n"

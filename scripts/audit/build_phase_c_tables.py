@@ -55,13 +55,15 @@ EXACT_REPLACEMENTS: dict[str, str] = {
     "factor(HV270)3": "Quintil 3 — Medio",
     "factor(HV270)4": "Quintil 4 — Rico",
     "factor(HV270)5": "Quintil 5 — Más rico",
-    # Educación (QS25N): 1 Sin/Inicial, 2 Primaria, 3 Secundaria, 4 Superior No Univ., 5 Superior Univ.
-    "factor(QS25N)0": "Sin educación / inicial (referencia)",
-    "factor(QS25N)1": "Sin educación / inicial",
-    "factor(QS25N)2": "Primaria",
-    "factor(QS25N)3": "Secundaria",
-    "factor(QS25N)4": "Superior no universitaria",
-    "factor(QS25N)5": "Superior universitaria",
+    # Educación (QS25N) — diccionario INEI real (auditoría 2026-07-16):
+    # 0 Sin nivel/inicial (incluye QS24=2 nunca asistió), 1 Primaria, 2 Secundaria,
+    # 3 Superior no universitaria, 4 Superior universitaria, 5 Postgrado.
+    "factor(QS25N)0": "Sin nivel / inicial (referencia)",
+    "factor(QS25N)1": "Primaria",
+    "factor(QS25N)2": "Secundaria",
+    "factor(QS25N)3": "Superior no universitaria",
+    "factor(QS25N)4": "Superior universitaria",
+    "factor(QS25N)5": "Postgrado",
     # Violencia de pareja
     "factor(VIOLENCIA_PAREJA)0": "Sin violencia (referencia)",
     "factor(VIOLENCIA_PAREJA)1": "Violencia leve / única",

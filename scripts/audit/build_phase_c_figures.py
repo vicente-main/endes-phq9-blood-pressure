@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "data" / "output" / "Auditoria_Integral"
 STROBE_DATA = ROOT / "data" / "output" / "Para Enviar" / "07_figura_1_strobe_datos.csv"
 SPLINE_DATA = ROOT / "data" / "output" / "analysis" / "figures" / "spline_curve_pooled.csv"
+SPLINE_META = ROOT / "data" / "output" / "analysis" / "figures" / "spline_nonlinearity_summary.csv"
 BASE_PARQUET = ROOT / "data" / "output" / "endes_hta_depresion_2019_2024.parquet"
 
 
@@ -225,23 +226,24 @@ def _verify_strobe_counts(df: pd.DataFrame, structural_n: int, final_n: int) -> 
 
 def build_spline_v2(out_dir: Path) -> None:
     df = pd.read_csv(SPLINE_DATA)
+    meta = pd.read_csv(SPLINE_META).iloc[0]
+    pooled_p = (
+        float(meta["d2_p_value"])
+        if "d2_p_value" in meta.index and pd.notna(meta["d2_p_value"])
+        else float(meta["median_p_value"])
+    )
     df = df.sort_values("label").reset_index(drop=True)
     phq = df["label"].astype(float).to_numpy()
-    log_pr = df["estimate"].to_numpy()
+    prevalence = df["estimate"].to_numpy()
     se = df["std_error"].to_numpy()
     lo = df["ci_low"].to_numpy()
     hi = df["ci_high"].to_numpy()
 
-    # Transformar a Razón de Prevalencia (escala interpretable)
-    # NOTA: estimate aquí es log(P) en términos absolutos (no relativos a una referencia).
-    # Para preservar la lectura del análisis original, mantenemos la curva en escala
-    # "probabilidad fitted" pero la convertimos en porcentaje para legibilidad.
-    p = np.exp(log_pr) / (1 + np.exp(log_pr)) if False else log_pr  # ya es prob lineal en pred
-    # spline_curve_pooled está en escala log link de cuasi-poisson; exponenciamos
-    fitted_pr = np.exp(log_pr)        # prevalencia ajustada como proporción (~6%)
-    fitted_pct = fitted_pr * 100       # porcentaje
-    pct_lo = np.exp(lo) * 100
-    pct_hi = np.exp(hi) * 100
+    # spline_curve_pooled ya está en escala respuesta: prevalencia marginal
+    # estandarizada como proporción. No volver a exponenciar.
+    fitted_pct = prevalence * 100
+    pct_lo = lo * 100
+    pct_hi = hi * 100
 
     # Histograma marginal de PHQ-9 desde la base
     if BASE_PARQUET.exists():
@@ -287,7 +289,8 @@ def build_spline_v2(out_dir: Path) -> None:
     # Anotación de no linealidad
     ax_main.text(
         0.98, 0.05,
-        "p de no-linealidad (Wald, 2 gl) = 0,251\nNodos en PHQ-9 = 0, 4, 9, 14",
+        f"p de no-linealidad (D2 pooled, 2 gl) = {pooled_p:.3f}".replace(".", ",")
+        + "\nNodos en PHQ-9 = 0, 4, 9, 14",
         ha="right", va="bottom", transform=ax_main.transAxes, fontsize=9,
         bbox={"facecolor": "white", "edgecolor": "#888888", "boxstyle": "round,pad=0.4", "alpha": 0.9},
     )
@@ -305,7 +308,8 @@ def build_spline_v2(out_dir: Path) -> None:
     # Notas
     fig.text(
         0.5, -0.01,
-        "Nota: curva ajustada por edad, sexo, educación, área, riqueza, violencia de pareja y año, "
+        "Nota: prevalencia marginal estandarizada por edad, sexo, educación, área, riqueza, "
+        "violencia de pareja, año y altitud, "
         "con diseño muestral complejo (svydesign). Bandas: IC 95% pooled (reglas de Rubin). "
         "El histograma muestra la densidad de PHQ-9; la región sombreada (PHQ-9 > 20) contiene <1.2% de la muestra.",
         ha="center", va="top", fontsize=8.5, color="#404040", wrap=True,

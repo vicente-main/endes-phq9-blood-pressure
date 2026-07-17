@@ -25,6 +25,8 @@ import numpy as np
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+
+from etiquetas_educacion import EDU_LABELS_ES, EDU_ORDER_ES
 from openpyxl.utils import get_column_letter
 
 
@@ -59,17 +61,18 @@ CATEGORICAL_VARS = [
         ["Q1 — Más pobre", "Q2", "Q3", "Q4", "Q5 — Más rico"],
     ),
     (
+        # Etiquetas corregidas (auditoria 2026-07-16): codificacion real 0..5 del
+        # diccionario INEI; fuente unica en etiquetas_educacion.py.
         "QS25N", "Nivel educativo",
-        {0: "Sin educación / inicial", 1: "Sin educación / inicial",
-         2: "Primaria", 3: "Secundaria",
-         4: "Superior no universitaria", 5: "Superior universitaria"},
-        ["Sin educación / inicial", "Primaria", "Secundaria",
-         "Superior no universitaria", "Superior universitaria"],
+        dict(EDU_LABELS_ES),
+        list(EDU_ORDER_ES),
     ),
     (
+        # Codificación real del pipeline (auditoría 2026-07-16): 0 = sin violencia;
+        # 1 = con violencia FÍSICA (QS710/QS711 son actos físicos); 2 = sin pareja.
         "VIOLENCIA_PAREJA", "Violencia de pareja (último año)",
-        {0: "Sin violencia", 1: "Leve / única", 2: "Múltiple / severa"},
-        ["Sin violencia", "Leve / única", "Múltiple / severa"],
+        {0: "Sin violencia", 1: "Con violencia (física)", 2: "Sin pareja"},
+        ["Sin violencia", "Con violencia (física)", "Sin pareja"],
     ),
     (
         "ALCOHOL_PROBLEMATICO", "Consumo problemático de alcohol",

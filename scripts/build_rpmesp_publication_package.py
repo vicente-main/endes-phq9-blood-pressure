@@ -300,6 +300,11 @@ def _build_robustness_table(
         & (sensitivity_models["term"] == "PHQ9_TOTAL")
     ].iloc[0]
     spline = spline_meta.iloc[0]
+    spline_pooled_p = (
+        spline["d2_p_value"]
+        if "d2_p_value" in spline.index and pd.notna(spline["d2_p_value"])
+        else spline["median_p_value"]
+    )
 
     rows = [
         {
@@ -332,12 +337,13 @@ def _build_robustness_table(
             "Parametro": "Resumen de no linealidad",
             "Estimacion": "",
             "IC 95%": "",
-            "p": "",
+            "p": _fmt_p(spline_pooled_p),
             "n medio": "",
             "Imputaciones": str(int(spline["n_imputations_with_test"])),
             "Lectura": "No hubo evidencia consistente de no linealidad entre imputaciones.",
             "Nota": (
-                "Resumen entre imputaciones: p media de no linealidad = "
+                f"Prueba D2 pooled de no linealidad = {_fmt_p(spline_pooled_p)}. "
+                "Como descriptivos por imputación: p media = "
                 f"{_fmt_p(spline['mean_p_value'])}; "
                 f"mediana = {_fmt_p(spline['median_p_value'])}; "
                 f"rango = {_fmt_p(spline['min_p_value'])} a {_fmt_p(spline['max_p_value'])}."
@@ -667,9 +673,13 @@ def _build_supplementary_files() -> None:
     fig2_fmt["ci_high_pct"] = fig2_fmt["ci_high"].map(_fmt_pct)
 
     fig2_meta_fmt = fig2_meta.copy()
-    for col in ["mean_wald_statistic", "rubin_style_mean_statistic"]:
+    for col in ["mean_wald_statistic", "rubin_style_mean_statistic", "d2_statistic", "d2_df1", "d2_df2"]:
+        if col not in fig2_meta_fmt.columns:
+            continue
         fig2_meta_fmt[col] = fig2_meta_fmt[col].map(lambda x: _fmt_decimal(x, 2))
-    for col in ["median_p_value", "mean_p_value", "min_p_value", "max_p_value"]:
+    for col in ["d2_p_value", "median_p_value", "mean_p_value", "min_p_value", "max_p_value"]:
+        if col not in fig2_meta_fmt.columns:
+            continue
         fig2_meta_fmt[col] = fig2_meta_fmt[col].map(_fmt_p)
 
     _write_workbook(
@@ -707,8 +717,8 @@ STROBE: Strengthening the Reporting of Observational Studies in Epidemiology; EN
     (MAIN_DIR / "Leyendas_figuras_RPMESP.txt").write_text(legends, encoding="utf-8-sig")
     supp_legends = """Leyendas de figuras suplementarias
 
-Figura S1. Curva spline cúbica restringida de la probabilidad predicha de presión arterial elevada según el puntaje PHQ-9 en 20 imputaciones.
-La banda sombreada representa el IC 95%. La figura se conserva como verificación de forma funcional, no como hallazgo principal. PHQ-9: Patient Health Questionnaire-9; IC 95%: intervalo de confianza del 95%.
+Figura S1. Curva spline cúbica restringida de la prevalencia marginal estandarizada de presión arterial elevada según el puntaje PHQ-9 en 20 imputaciones.
+La banda sombreada representa el IC 95%. La prueba de no linealidad se combinó con D2. La figura se conserva como verificación de forma funcional, no como hallazgo principal. PHQ-9: Patient Health Questionnaire-9; IC 95%: intervalo de confianza del 95%.
 """
     (SUPP_DIR / "Leyendas_figuras_suplementarias.txt").write_text(supp_legends, encoding="utf-8-sig")
 

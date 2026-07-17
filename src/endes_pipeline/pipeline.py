@@ -57,6 +57,7 @@ CSALUD_BASE_COLS = [
     "QSRESULT",
     "QS23",
     "QSSEXO",
+    "QS24",
     "QS25N",
     "QS900",
     "QS901",
@@ -94,6 +95,7 @@ EXPLICIT_CODED_MISSING_COLS = sorted(
     set(
         PHQ_COLS
         + [
+            "QS24",
             "QS102",
             "QS104",
             "QS106",
@@ -118,6 +120,7 @@ NUMERIC_PARSE_COLS = sorted(
             "QSRESULT",
             "QS23",
             "QSSEXO",
+            "QS24",
             "QS25N",
             "QS900",
             "QS901",
@@ -162,6 +165,7 @@ INTEGER_CODE_COLS = sorted(
             "QSRESULT",
             "QS23",
             "QSSEXO",
+            "QS24",
             "QS25N",
             "QS102",
             "QS103U",
@@ -665,6 +669,22 @@ def _derive_diet_quality_variables(work: pd.DataFrame) -> None:
 
 
 def _derive_secondary_variables(work: pd.DataFrame) -> None:
+    # Compuerta educativa (auditoria 2026-07-16, hallazgo #2): QS25N "nivel que
+    # aprobo" solo se pregunta si QS24 "asistio a la escuela" == 1. QS24 == 2
+    # (nunca asistio) deja QS25N estructuralmente vacio: NO es no-respuesta MAR y
+    # no debe imputarse. Se asigna QS25N = 0, fusionando "nunca asistio" con la
+    # categoria minima 0 ("Inicial/pre-escolar") bajo la etiqueta conjunta
+    # "Sin nivel / inicial"; asi el factor conserva sus 6 niveles (0-5) y la
+    # referencia sigue siendo el nivel educativo mas bajo. El residuo con QS24
+    # tambien perdido permanece perdido (y queda fuera de MICE, ver analysis.py).
+    gate_never_attended = work["QS24"].eq(2) & work["QS25N"].isna()
+    if gate_never_attended.any():
+        work.loc[gate_never_attended, "QS25N"] = 0
+    logging.info(
+        "Compuerta QS24: %s registros con QS24==2 y QS25N vacio reasignados a QS25N=0 (sin nivel/inicial)",
+        int(gate_never_attended.sum()),
+    )
+
     work["DX_HTA_PREVIO"] = work["QS102"].map({1: 1, 2: 0}).astype("Int64")
     work["DIAGNOSTICO_HTA"] = work["DX_HTA_PREVIO"].copy()
     work["TRATAMIENTO_SALUD_MENTAL"] = work["QS707"].map({1: 1, 2: 0}).astype("Int64")
@@ -727,6 +747,7 @@ def _final_column_order() -> List[str]:
         "EDAD",
         "QSSEXO",
         "SEXO_CAT",
+        "QS24",
         "QS25N",
         "AREA_RESIDENCIA",
         "DOMINIO_GEO",
@@ -1199,7 +1220,9 @@ def _write_missing_by_phq9_severity(unified: pd.DataFrame, config: PipelineConfi
     severidad depresiva (PHQ-9). Sustenta el supuesto MAR de la imputacion multiple:
     un patron diferencial (mas faltantes a mayor severidad) refuerza la necesidad de MICE.
     """
-    target_cols = ["QS25N", "IMC", "QS907", "CALIDAD_DIETA", "QS109", "VIOLENCIA_PAREJA"]
+    # QS25N se excluye: su faltante principal es el salto estructural QS24 y se
+    # resuelve deterministicamente en _derive_secondary_variables; no es target MICE.
+    target_cols = ["IMC", "QS907", "CALIDAD_DIETA", "QS109", "VIOLENCIA_PAREJA"]
     severity_order = ["Minima", "Leve", "Moderada", "Mod_Severa", "Severa"]
     sev = unified["SEVERIDAD_DEPRESIVA"].astype("string")
 

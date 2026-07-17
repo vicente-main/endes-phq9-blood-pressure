@@ -18,8 +18,15 @@ from statsmodels.tools.tools import add_constant
 
 MODEL2_COVARS = ["QS23", "QSSEXO", "QS25N", "HV025", "HV270", "VIOLENCIA_PAREJA"]
 MODEL3_EXTRA_COVARS = ["IMC", "QS907", "QS201", "ALCOHOL_PROBLEMATICO", "CALIDAD_DIETA", "QS109"]
-NON_IMPUTED_SKIP_COVARS = ["QS201", "ALCOHOL_PROBLEMATICO"]
-MICE_TARGETS = MODEL2_COVARS + [col for col in MODEL3_EXTRA_COVARS if col not in NON_IMPUTED_SKIP_COVARS]
+# Variables con salto estructural de cuestionario: quedan FUERA de MICE (imputarlas
+# violaria MAR). QS201/ALCOHOL_PROBLEMATICO son deterministas desde el pipeline.
+# QS25N (auditoria 2026-07-16): su faltante es la compuerta QS24 "asistio a la
+# escuela" (QS24==2 -> nunca asistio); el pipeline la resuelve asignando QS25N=0
+# y el residuo (QS24 tambien perdido) permanece perdido y sale de los modelos.
+NON_IMPUTED_SKIP_COVARS = ["QS201", "ALCOHOL_PROBLEMATICO", "QS25N"]
+MICE_TARGETS = [
+    col for col in [*MODEL2_COVARS, *MODEL3_EXTRA_COVARS] if col not in NON_IMPUTED_SKIP_COVARS
+]
 CONTINUOUS_IMPUTE_COLS = {"IMC", "QS907"}
 CATEGORICAL_IMPUTE_COLS = [col for col in MICE_TARGETS if col not in CONTINUOUS_IMPUTE_COLS]
 MICE_PREDICTORS = ["PHQ9_TOTAL", "PRESION_ARTERIAL_ELEVADA", "ANIO", "HV001", "HV022", "PESO_FINAL"]
@@ -215,9 +222,10 @@ ANALYSIS_SKIPPED_ITEMS = [
     },
 ]
 
-SPLINE_ADJUSTERS = (
-    "QS23 + factor(QSSEXO) + factor(QS25N) + factor(HV025) + factor(HV270) + factor(VIOLENCIA_PAREJA) + factor(ANIO)"
-)
+# Ajustadores de la spline = conjunto estructural del model_2 INCLUIDA la altitud.
+# Auditoria 2026-07-16 (hallazgo #1): antes duplicaba _STRUCT_COVARS sin _ALT, por lo
+# que la figura principal se ajustaba sin el confusor central del estudio.
+SPLINE_ADJUSTERS = f"{_STRUCT_COVARS} + {_ALT}"
 
 
 @dataclass
@@ -598,9 +606,10 @@ def _run_r_bridge(imputed_paths: Sequence[Path], settings: AnalysisSettings) -> 
 
         if run_figures:
             knots = _select_spline_knots(df["PHQ9_TOTAL"])
-            reference_row = _build_spline_reference(df)
-            r_ref = _to_r_dataframe(reference_row, pandas2ri, localconverter)
-            spline_fit = ro.globalenv["fit_spline_model"](r_df, ro.FloatVector(knots), SPLINE_ADJUSTERS, r_ref)
+            # Auditoria 2026-07-16 (hallazgo #5): la curva ya no se predice sobre un
+            # perfil modal arbitrario sino como prevalencia marginal estandarizada
+            # (g-computation ponderada sobre la muestra analitica) dentro de R.
+            spline_fit = ro.globalenv["fit_spline_model"](r_df, ro.FloatVector(knots), SPLINE_ADJUSTERS)
             spline_curves.append(_spline_curve_to_frame(spline_fit, imputation_id))
             spline_meta.append(_spline_meta_to_row(spline_fit, imputation_id, knots))
             logging.info("Puente R | imputacion %s/%s | figuras listas", imputation_id, len(imputed_paths))
@@ -1365,26 +1374,68 @@ def _pool_joint_wald(fits: List[Dict[str, object]]) -> Dict[str, object]:
 
 
 def _pool_spline_nonlinearity(spline_meta_df: pd.DataFrame) -> pd.DataFrame:
-    valid = spline_meta_df.loc[spline_meta_df["statistic"].notna()].copy()
+    """Combina los tests de no-linealidad por imputacion con la regla D2.
+
+    Auditoria 2026-07-16 (hallazgo #4): la mediana/media de los p por imputacion no
+    es una regla de combinacion valida bajo imputacion multiple. Se aplica D2
+    (Li, Meng, Raghunathan & Rubin 1991; implementacion de referencia
+    miceadds::micombine.chisquare): los Wald F por imputacion (df1=k) se llevan a
+    escala chi-cuadrado d=F*k y se combinan como
+        r  = (1 + 1/m) * var(sqrt(d))
+        D2 = (mean(d)/k - r*(m+1)/(m-1)) / (1 + r)
+        df2 = (m-1) * (1 + 1/r)^2 / k^(3/m)
+        p  = P(F_{k,df2} > D2)
+    Se conservan mediana/media/rango de los p solo como descriptivos.
+    """
+    empty_row = {
+        "d2_statistic": np.nan,
+        "d2_df1": np.nan,
+        "d2_df2": np.nan,
+        "d2_p_value": np.nan,
+        "mean_wald_statistic": np.nan,
+        "median_p_value": np.nan,
+        "mean_p_value": np.nan,
+        "min_p_value": np.nan,
+        "max_p_value": np.nan,
+        "rubin_style_mean_statistic": np.nan,
+        "n_imputations_with_test": 0,
+    }
+    valid = spline_meta_df.loc[
+        spline_meta_df["statistic"].notna() & spline_meta_df["df_num"].notna()
+    ].copy()
     if valid.empty:
-        return pd.DataFrame(
-            [
-                {
-                    "mean_wald_statistic": np.nan,
-                    "median_p_value": np.nan,
-                    "mean_p_value": np.nan,
-                    "min_p_value": np.nan,
-                    "max_p_value": np.nan,
-                    "rubin_style_mean_statistic": np.nan,
-                    "n_imputations_with_test": 0,
-                }
-            ]
-        )
+        return pd.DataFrame([empty_row])
+
+    m = int(len(valid))
+    k = int(valid["df_num"].iloc[0])
+    # regTermTest (Wald) devuelve un F con df1=k -> equivalente chi-cuadrado d = F*k.
+    d = (valid["statistic"].to_numpy(dtype=float) * valid["df_num"].to_numpy(dtype=float))
+    d = np.clip(d, 0.0, None)
+
+    if m > 1 and k > 0:
+        r = (1.0 + 1.0 / m) * float(np.var(np.sqrt(d), ddof=1))
+        if r > 1e-12:
+            d2_stat = (d.mean() / k - r * (m + 1.0) / (m - 1.0)) / (1.0 + r)
+            d2_df2 = (m - 1.0) * (1.0 + 1.0 / r) ** 2 / k ** (3.0 / m)
+            d2_p = float(stats.f.sf(max(d2_stat, 0.0), k, d2_df2))
+        else:
+            # Sin varianza entre imputaciones: F_{k,inf} == chi2_k / k.
+            d2_stat = d.mean() / k
+            d2_df2 = np.inf
+            d2_p = float(stats.chi2.sf(d2_stat * k, k))
+    else:
+        d2_stat = d.mean() / k if k > 0 else np.nan
+        d2_df2 = np.nan
+        d2_p = float(valid["p_value"].iloc[0]) if m == 1 else np.nan
 
     pooled = _pool_scalar(valid["statistic"].to_numpy(), np.zeros(len(valid)))
     return pd.DataFrame(
         [
             {
+                "d2_statistic": d2_stat,
+                "d2_df1": k,
+                "d2_df2": d2_df2,
+                "d2_p_value": d2_p,
                 "mean_wald_statistic": valid["statistic"].mean(),
                 "median_p_value": valid["p_value"].median(),
                 "mean_p_value": valid["p_value"].mean(),
@@ -1454,21 +1505,6 @@ def _select_spline_knots(series: pd.Series) -> List[float]:
         return quantile_knots[:4].tolist()
     fallback = np.array([0.0, 4.0, 9.0, 14.0], dtype=float)
     return np.unique(fallback).tolist()
-
-
-def _build_spline_reference(df: pd.DataFrame) -> pd.DataFrame:
-    reference: Dict[str, object] = {}
-    columns = ["QS23", "QSSEXO", "QS25N", "HV025", "HV270", "VIOLENCIA_PAREJA", "ANIO", "HV001", "HV022", "PESO_FINAL"]
-    for col in columns:
-        series = df[col]
-        if pd.api.types.is_numeric_dtype(series):
-            if col == "PESO_FINAL":
-                reference[col] = float(series.median())
-            else:
-                reference[col] = float(series.dropna().mode().iloc[0]) if series.dropna().nunique() < 10 else float(series.median())
-        else:
-            reference[col] = series.dropna().mode().iloc[0]
-    return pd.DataFrame([reference])
 
 
 def _resolve_r_home(configured_r_home: Optional[str]) -> str:
@@ -1827,7 +1863,7 @@ fit_bivariate_term_bundle <- function(df, variables) {
   jsonlite::toJSON(rows, auto_unbox=TRUE, digits=NA, null="null")
 }
 
-fit_spline_model <- function(df, knots, adjuster_text, reference_df) {
+fit_spline_model <- function(df, knots, adjuster_text) {
   basis <- as.data.frame(Hmisc::rcspline.eval(df$PHQ9_TOTAL, knots=knots, inclx=TRUE))
   basis_names <- paste0("PHQ_SPLINE_", seq_len(ncol(basis)))
   names(basis) <- basis_names
@@ -1853,18 +1889,51 @@ fit_spline_model <- function(df, knots, adjuster_text, reference_df) {
     p_value <- p_value[1]
   }
 
+  # Prevalencia MARGINAL ESTANDARIZADA (auditoria 2026-07-16, hallazgo #5):
+  # para cada valor g del grid PHQ-9 se fija la base spline en b(g) para TODAS las
+  # filas usadas por el modelo y se promedia la prediccion en escala respuesta con
+  # los pesos muestrales (g-computation). Como b(g) es identica para todas las
+  # filas dado g, eta_i(g) = eta0_i + b(g)'beta_spl, con eta0_i = x_cov_i' beta_cov,
+  # y m(g) = exp(b(g)'beta_spl) * sum(w_i exp(eta0_i)) / sum(w_i).
+  # El IC 95% usa metodo delta sobre log m(g) con la vcov de diseno completa.
+  beta <- coef(fit)
+  V <- vcov(fit)
+  mm <- model.matrix(fit)
+  w <- as.numeric(fit$prior.weights)
+  spl_cols <- colnames(mm)[colnames(mm) %in% basis_names]
+  cov_cols <- setdiff(colnames(mm), spl_cols)
+  beta_cov <- beta[cov_cols]
+  beta_spl <- beta[spl_cols]
+  eta0 <- as.vector(mm[, cov_cols, drop=FALSE] %*% beta_cov)
+  ew <- w * exp(eta0)
+  sw <- sum(w)
+  A <- sum(ew) / sw
+  C <- as.vector(crossprod(mm[, cov_cols, drop=FALSE], ew)) / sw
+  V_ord <- V[c(cov_cols, spl_cols), c(cov_cols, spl_cols)]
+
   grid <- data.frame(PHQ9_TOTAL=seq(min(df$PHQ9_TOTAL, na.rm=TRUE), max(df$PHQ9_TOTAL, na.rm=TRUE), by=1))
-  grid_basis <- as.data.frame(Hmisc::rcspline.eval(grid$PHQ9_TOTAL, knots=knots, inclx=TRUE))
-  names(grid_basis) <- basis_names
-  reference_expanded <- reference_df[rep(1, nrow(grid)), , drop=FALSE]
-  newdata <- cbind(reference_expanded, grid_basis)
-  pred_link <- suppressWarnings(predict(fit, newdata=newdata, type="link", se=TRUE))
-  pred_eta <- as.numeric(coef(pred_link))
-  pred_eta_se <- as.numeric(survey::SE(pred_link))
-  pred_fit <- exp(pred_eta)
-  pred_se <- pred_fit * pred_eta_se
-  lower_ci <- exp(pred_eta - 1.96 * pred_eta_se)
-  upper_ci <- exp(pred_eta + 1.96 * pred_eta_se)
+  grid_basis <- as.matrix(as.data.frame(Hmisc::rcspline.eval(grid$PHQ9_TOTAL, knots=knots, inclx=TRUE)))
+  colnames(grid_basis) <- basis_names
+  grid_basis <- grid_basis[, spl_cols, drop=FALSE]
+
+  n_grid <- nrow(grid_basis)
+  pred_fit <- numeric(n_grid)
+  pred_se <- numeric(n_grid)
+  lower_ci <- numeric(n_grid)
+  upper_ci <- numeric(n_grid)
+  for (i in seq_len(n_grid)) {
+    b <- as.numeric(grid_basis[i, ])
+    e_s <- exp(sum(b * beta_spl))
+    m_g <- e_s * A
+    grad <- c(e_s * C, m_g * b)
+    var_m <- as.numeric(t(grad) %*% V_ord %*% grad)
+    var_m <- max(var_m, 0)
+    se_log <- if (m_g > 0) sqrt(var_m) / m_g else NA_real_
+    pred_fit[i] <- m_g
+    pred_se[i] <- sqrt(var_m)
+    lower_ci[i] <- m_g * exp(-1.96 * se_log)
+    upper_ci[i] <- m_g * exp(1.96 * se_log)
+  }
 
   list(
     grid = grid$PHQ9_TOTAL,

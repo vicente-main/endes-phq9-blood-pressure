@@ -199,7 +199,12 @@ def _plot_spline_figure(out_png: Path, out_pdf: Path, out_svg: Path | None = Non
     curve_df["phq9_total"] = pd.to_numeric(curve_df["label"], errors="coerce")
     curve_df = curve_df.sort_values("phq9_total").reset_index(drop=True)
 
-    median_p_imputations = float(meta_df["median_p_value"].iloc[0])
+    meta_row = meta_df.iloc[0]
+    pooled_p = (
+        float(meta_row["d2_p_value"])
+        if "d2_p_value" in meta_row.index and pd.notna(meta_row["d2_p_value"])
+        else float(meta_row["median_p_value"])
+    )
     knots = "0, 4, 9, 14"
 
     x = curve_df["phq9_total"]
@@ -214,7 +219,7 @@ def _plot_spline_figure(out_png: Path, out_pdf: Path, out_svg: Path | None = Non
 
     ax.set_title("Figura 2. Curva spline entre PHQ-9 y presión arterial elevada", fontsize=14, fontweight="bold")
     ax.set_xlabel("Puntaje PHQ-9")
-    ax.set_ylabel("Probabilidad predicha de presión arterial elevada (%)")
+    ax.set_ylabel("Prevalencia marginal estandarizada de presión arterial elevada (%)")
     ax.grid(axis="y", linestyle="--", alpha=0.35)
     ax.set_xlim(float(x.min()), float(x.max()))
     ax.set_ylim(5.5, 7.0)
@@ -222,8 +227,8 @@ def _plot_spline_figure(out_png: Path, out_pdf: Path, out_svg: Path | None = Non
 
     subtitle = (
         f"RCS con 4 nodos ({knots}) sobre 20 imputaciones. "
-        f"No se observó evidencia consistente de no linealidad entre imputaciones "
-        f"(mediana descriptiva de p = {median_p_imputations:.3f})."
+        f"No se observó evidencia de no linealidad "
+        f"(prueba D2 pooled, p = {pooled_p:.3f})."
     )
     ax.text(0.02, 0.96, subtitle, transform=ax.transAxes, ha="left", va="top", fontsize=10, color="#3d405b")
     ax.legend(frameon=False, loc="upper right")

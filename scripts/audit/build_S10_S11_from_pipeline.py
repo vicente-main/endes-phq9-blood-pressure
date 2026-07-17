@@ -33,13 +33,18 @@ WEALTH = [("Q2 — Poor (vs Q1 poorest)", "factor(HV270)2"),
           ("Q3 — Middle (vs Q1)", "factor(HV270)3"),
           ("Q4 — Rich (vs Q1)", "factor(HV270)4"),
           ("Q5 — Richest (vs Q1)", "factor(HV270)5")]
-EDU = [("None / preschool", "factor(QS25N)1"), ("Primary", "factor(QS25N)2"),
-       ("Secondary", "factor(QS25N)3"), ("Non-university higher", "factor(QS25N)4"),
-       ("University higher", "factor(QS25N)5")]
+# Etiquetas corregidas (auditoria 2026-07-16): diccionario INEI real 0..5 —
+# referencia = 0 (no formal/initial); 5 = Postgraduate (antes omitido y todo
+# el bloque desplazado una posicion). Fuente unica: etiquetas_educacion.py.
+EDU = [("Primary", "factor(QS25N)1"), ("Secondary", "factor(QS25N)2"),
+       ("Higher non-university", "factor(QS25N)3"), ("Higher university", "factor(QS25N)4"),
+       ("Postgraduate", "factor(QS25N)5")]
 ALT = [("Altitude 1,500-2,499 m (vs < 1,500)", "factor(ALTITUD_CAT3)1500-2499"),
        ("Altitude ≥ 2,500 m (vs < 1,500)", "factor(ALTITUD_CAT3)>=2500")]
+# IPV: QS710/QS711 son actos FISICOS (auditoria 2026-07-16, hallazgo #6) — el
+# constructo no incluye violencia psicologica ni sexual; coherente con Metodos.
 SEX_VP = [("Female (vs Male)", "factor(QSSEXO)2"),
-          ("With violence (physical/psychological)", "factor(VIOLENCIA_PAREJA)1"),
+          ("With violence (physical)", "factor(VIOLENCIA_PAREJA)1"),
           ("No partner", "factor(VIOLENCIA_PAREJA)2")]
 PHQ = ("PHQ-9 score (per additional point)", "PHQ9_TOTAL")
 AGE = ("Age (per additional year)", "QS23")
@@ -77,8 +82,11 @@ S10_NOTES = [
     "Notes:",
     "PR: prevalence ratio (quasi-Poisson, log link). 95% CI and p combined by Rubin's rules over "
     "20 MICE imputations. n = 191,757 (constant across the three models).",
-    "Imputation: the 10 MAR covariables were imputed; the PHQ-9 exposure and the elevated-BP outcome "
-    "were NOT imputed. Details in the manuscript Methods.",
+    "Imputation: the MAR covariables were imputed; the PHQ-9 exposure, the elevated-BP outcome, "
+    "altitude, and educational level were NOT imputed (education missingness is the structural "
+    "QS24 questionnaire skip, resolved deterministically). Details in the manuscript Methods.",
+    "Education reference category: no formal education / initial (QS25N = 0; includes 'never "
+    "attended school', QS24 = 2).",
     "Model 1: crude PHQ-9. Model 2 (main): + age, sex, education, area, wealth, IPV, year, and altitude. "
     "Model 3 (exploratory): + BMI, waist, tobacco use, problematic alcohol use, diet, and diabetes "
     "diagnosis (potential mediators).",
@@ -94,8 +102,11 @@ S11_NOTES = [
     "PR: prevalence ratio (quasi-Poisson, log link). Pooled over 20 MICE imputations (Rubin).",
     "Non-adherence: outcome = NO_ADHERENCIA_HTA in persons with prior Dx (n = 17,454). "
     "Uncontrolled: outcome = elevated BP in persons with prior Dx (n = 17,469).",
-    "Same covariables as the structural Model 2. The 10 MAR covariables were imputed; the outcome was "
-    "NOT. See the manuscript Methods.",
+    "Same covariables as the structural Model 2. The MAR covariables were imputed; the outcome, "
+    "altitude, and educational level were NOT (education missingness is the structural QS24 skip, "
+    "resolved deterministically). See the manuscript Methods.",
+    "Education reference category: no formal education / initial (QS25N = 0; includes 'never "
+    "attended school', QS24 = 2).",
     "Exposure row (PHQ-9) shown to 3 decimals; remaining coefficients to 2 decimals. Intercept omitted.",
     "Source: table4_cascade_models.csv (pipeline, 2019-2025 run).",
 ]

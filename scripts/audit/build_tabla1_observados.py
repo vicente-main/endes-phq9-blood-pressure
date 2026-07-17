@@ -19,6 +19,8 @@ import numpy as np
 import pandas as pd
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
+
+from etiquetas_educacion import EDU_LABELS_ES, EDU_ORDER_ES
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -39,16 +41,18 @@ CATEGORICAL_VARS = [
     ("HV270", "Quintil de riqueza",
      {1: "Q1 — Más pobre", 2: "Q2", 3: "Q3", 4: "Q4", 5: "Q5 — Más rico"},
      ["Q1 — Más pobre", "Q2", "Q3", "Q4", "Q5 — Más rico"]),
+    # Etiquetas corregidas (auditoría 2026-07-16): codificación real 0..5 del
+    # diccionario INEI; fuente única en etiquetas_educacion.py.
     ("QS25N", "Nivel educativo",
-     {0: "Sin educación / inicial", 1: "Sin educación / inicial", 2: "Primaria", 3: "Secundaria",
-      4: "Superior no universitaria", 5: "Superior universitaria"},
-     ["Sin educación / inicial", "Primaria", "Secundaria",
-      "Superior no universitaria", "Superior universitaria"]),
-    # Etiquetas de VIOLENCIA corregidas a la codificación real del pipeline:
-    # 0 = sin violencia ; 1 = con violencia (física/psicológica) ; 2 = sin pareja
+     dict(EDU_LABELS_ES),
+     list(EDU_ORDER_ES)),
+    # Etiquetas de VIOLENCIA según la codificación real del pipeline:
+    # 0 = sin violencia ; 1 = con violencia FÍSICA (QS710/QS711 son actos físicos:
+    # golpes con pie/puño, con objeto — el constructo NO incluye violencia
+    # psicológica ni sexual; auditoría 2026-07-16, hallazgo #6) ; 2 = sin pareja
     ("VIOLENCIA_PAREJA", "Violencia de pareja (último año)",
-     {0: "Sin violencia", 1: "Con violencia (física/psicológica)", 2: "Sin pareja"},
-     ["Sin violencia", "Con violencia (física/psicológica)", "Sin pareja"]),
+     {0: "Sin violencia", 1: "Con violencia (física)", 2: "Sin pareja"},
+     ["Sin violencia", "Con violencia (física)", "Sin pareja"]),
     ("ALCOHOL_PROBLEMATICO", "Consumo problemático de alcohol",
      {0: "No", 1: "Sí", "NA": "No aplica (no consume)"},
      ["No", "Sí", "No aplica (no consume)"]),
