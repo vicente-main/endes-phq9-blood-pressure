@@ -227,11 +227,9 @@ def _verify_strobe_counts(df: pd.DataFrame, structural_n: int, final_n: int) -> 
 def build_spline_v2(out_dir: Path) -> None:
     df = pd.read_csv(SPLINE_DATA)
     meta = pd.read_csv(SPLINE_META).iloc[0]
-    pooled_p = (
-        float(meta["d2_p_value"])
-        if "d2_p_value" in meta.index and pd.notna(meta["d2_p_value"])
-        else float(meta["median_p_value"])
-    )
+    if "d2_p_value" not in meta.index or pd.isna(meta["d2_p_value"]):
+        raise ValueError("Falta d2_p_value; regenere la sección figures del puente R.")
+    pooled_p = float(meta["d2_p_value"])
     df = df.sort_values("label").reset_index(drop=True)
     phq = df["label"].astype(float).to_numpy()
     prevalence = df["estimate"].to_numpy()

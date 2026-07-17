@@ -291,10 +291,10 @@ def fmt_int_es(x) -> str:
 
 
 def spline_pooled_p(row: pd.Series) -> float:
-    """Usa D2 como inferencia primaria y conserva compatibilidad con outputs antiguos."""
-    if "d2_p_value" in row.index and pd.notna(row["d2_p_value"]):
-        return float(row["d2_p_value"])
-    return float(row["median_p_value"])
+    """Obtiene la inferencia D2; exige regenerar outputs analíticos antiguos."""
+    if "d2_p_value" not in row.index or pd.isna(row["d2_p_value"]):
+        raise ValueError("Falta d2_p_value; regenere la sección figures del puente R.")
+    return float(row["d2_p_value"])
 
 
 # ---------------------------------------------------------------------------
@@ -1216,9 +1216,10 @@ def write_readme(out_dir: Path) -> None:
         "\n"
         "Sobre el pooling sobre 20 imputaciones (importante)\n"
         "---------------------------------------------------\n"
-        "Cada análisis (modelo, prueba bivariada, spline) se ejecutó en los 20 datasets\n"
-        "imputados MICE y se combinó por reglas de Rubin (coeficientes) o mediana del p\n"
-        "(pruebas Rao-Scott). 'Pooled sobre 20 imputaciones' se refiere a este procedimiento,\n"
+        "Cada análisis se ejecutó en los 20 datasets imputados MICE. Los coeficientes\n"
+        "se combinaron por reglas de Rubin, la no-linealidad de la spline mediante D2 y\n"
+        "las pruebas Rao-Scott se resumen descriptivamente por su mediana de p.\n"
+        "'Pooled sobre 20 imputaciones' se refiere a este procedimiento,\n"
         "NO a que cada variable haya sido imputada.\n"
         "\n"
         "  Variables imputadas (MAR, 9 covariables listadas en mice_manifest.json):\n"
