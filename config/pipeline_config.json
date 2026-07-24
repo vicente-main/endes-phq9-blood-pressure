@@ -17,8 +17,8 @@
     "models_dir": "data/output/analysis/models",
     "figures_dir": "data/output/analysis/figures",
     "write_imputed_csv": false,
-    "r_home": "C:/Program Files/R/R-4.5.3",
-    "r_lib_user": "C:/Users/Trabajo/Documents/R/win-library/4.5"
+    "r_home": null,
+    "r_lib_user": null
   },
   "phases": {
     "run_mice": true,

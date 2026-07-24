@@ -68,7 +68,7 @@ RAO_SCOTT_VARS = [
 ]
 BIVARIATE_TEST_VARS = RAO_SCOTT_VARS
 
-# Conjunto estructural preespecificado (Modelo 2 original, SIN altitud).
+# Conjunto estructural definido en el marco de análisis (Modelo 2 original, SIN altitud).
 _STRUCT_COVARS = (
     "QS23 + factor(QSSEXO) + factor(QS25N) + factor(HV025) + factor(HV270) + "
     "factor(VIOLENCIA_PAREJA) + factor(ANIO)"
@@ -138,12 +138,15 @@ MODEL_SUBSETS = {
     "interaction_year": "",
     "interaction_area": "",
     "interaction_riqueza": "",
-    "interaction_dxhta": "",
+    # DX_HTA_PREVIO tiene 192 faltantes en la muestra 2019-2025. Deben
+    # excluirse del test binario; convertirlos en un nivel factor "NaN"
+    # añade un término de interacción artificial y altera el Wald global.
+    "interaction_dxhta": "DX_HTA_PREVIO %in% c(0, 1)",
     "interaction_altitud": "",
 }
 
 # Descomposicion jerarquica del PR de PHQ-9 (aporte por bloque). h2 = Modelo 2
-# preespecificado SIN altitud (sirve de modelo suplementario de trazabilidad de la enmienda);
+# definido SIN altitud (sirve de modelo suplementario de trazabilidad de la enmienda);
 # h3 = Modelo 2 con altitud (= MAIN_MODELS["model_2"]).
 HIERARCHICAL_MODELS = {
     "h0_crudo": "PRESION_ARTERIAL_ELEVADA ~ PHQ9_TOTAL",
@@ -162,8 +165,8 @@ SENSITIVITY_MODEL_ORDER = [
     "sensitivity_second_bp_measure",
     "sensitivity_outcome_130_80",
 ]
-# Panel de modificacion de efecto. Preespecificados: sexo, anio. Exploratorios (con
-# correccion por multiplicidad): area, riqueza, DX_HTA previo, altitud.
+# Panel de modificación de efecto. Informados por teoría: sexo y año. Exploratorios
+# (con corrección por multiplicidad): área, riqueza, DX_HTA previo y altitud.
 EFFECT_MOD_MODELS = [
     "interaction_sex",
     "interaction_year",
@@ -172,7 +175,7 @@ EFFECT_MOD_MODELS = [
     "interaction_dxhta",
     "interaction_altitud",
 ]
-EFFECT_MOD_PRESPECIFIED = {"interaction_sex", "interaction_year"}
+EFFECT_MOD_THEORY_INFORMED = {"interaction_sex", "interaction_year"}
 # Compatibilidad con interactions_and_sensitivity_models.csv: sensibilidades + interacciones.
 INTERACTION_MODEL_ORDER = SENSITIVITY_MODEL_ORDER + EFFECT_MOD_MODELS
 R_SECTION_CHOICES = ("tables", "models", "figures")
@@ -499,6 +502,7 @@ def _run_r_bridge(imputed_paths: Sequence[Path], settings: AnalysisSettings) -> 
     altitude_stratified: List[pd.DataFrame] = []
     altitude_strat_meta: List[Dict[str, object]] = []
     effect_mod_fits: Dict[str, List[Dict[str, object]]] = {m: [] for m in EFFECT_MOD_MODELS}
+    sex_specific_slope_fits: List[Dict[str, object]] = []
     hierarchical_results: List[pd.DataFrame] = []
     skipped_rows: List[Dict[str, object]] = []
     if run_models:
@@ -532,13 +536,17 @@ def _run_r_bridge(imputed_paths: Sequence[Path], settings: AnalysisSettings) -> 
                     effect_mod_fits[model_name].append(
                         _interaction_term_fit(fit, imputation_id, model_name)
                     )
+                if model_name == "interaction_sex":
+                    sex_specific_slope_fits.extend(
+                        _sex_specific_slope_fit(fit, imputation_id)
+                    )
 
             for model_name, formula in LOGISTIC_SENSITIVITY_MODELS.items():
                 fit = ro.globalenv["fit_logistic_model"](r_df, formula)
                 logistic_results.append(_model_fit_to_frame(fit, imputation_id, model_name))
                 logistic_meta_rows.append(_logistic_meta_to_row(fit, imputation_id, model_name))
 
-            # Descomposicion jerarquica del PR de PHQ-9 (aporte por bloque; h2 = preespecif. sin altitud).
+            # Descomposición jerárquica del PR de PHQ-9 (aporte por bloque; h2 sin altitud).
             for model_name, formula in HIERARCHICAL_MODELS.items():
                 fit = ro.globalenv["fit_svyglm_model"](r_df, formula, "")
                 hierarchical_results.append(_model_fit_to_frame(fit, imputation_id, model_name))
@@ -703,8 +711,21 @@ def _run_r_bridge(imputed_paths: Sequence[Path], settings: AnalysisSettings) -> 
         )
 
     if run_models and any(effect_mod_fits.values()):
-        _build_effect_modification_panel(effect_mod_fits).to_csv(
+        effect_panel = _build_effect_modification_panel(effect_mod_fits)
+        effect_panel.to_csv(
             settings.models_dir / "effect_modification_panel.csv",
+            index=False,
+            encoding="utf-8-sig",
+        )
+        _serialize_effect_modification_d1_inputs(effect_mod_fits).to_json(
+            settings.models_dir / "effect_modification_d1_inputs.json",
+            orient="records",
+            indent=2,
+            force_ascii=False,
+            double_precision=15,
+        )
+        _pool_sex_specific_slopes(sex_specific_slope_fits).to_csv(
+            settings.models_dir / "effect_modification_sex_stratified.csv",
             index=False,
             encoding="utf-8-sig",
         )
@@ -890,11 +911,12 @@ def _altitude_meta_to_row(fit, imputation_id: int, model_name: str, stratum: str
 
 def _interaction_term_fit(fit, imputation_id: int, model_name: str) -> Dict[str, object]:
     """Extrae los terminos de interaccion (que contienen ':') con su submatriz de
-    covarianza para el test de Wald conjunto pooled via _pool_joint_wald."""
+    covarianza para el test de Wald conjunto D1 de Li-Rubin."""
     coefs = np.asarray(fit.rx2("coef"), dtype=float)
     names = list(fit.rx2("coef").names)
     vcov = np.asarray(fit.rx2("vcov"), dtype=float)
     n_obs = int(np.asarray(fit.rx2("n_obs"), dtype=int)[0])
+    df_resid = _extract_r_scalar(fit.rx2("df_resid"))
 
     idx = [i for i, name in enumerate(names) if ":" in name]
     terms = [names[i] for i in idx]
@@ -907,7 +929,68 @@ def _interaction_term_fit(fit, imputation_id: int, model_name: str) -> Dict[str,
         "coef": sub_coef,
         "vcov": sub_vcov,
         "n_obs": n_obs,
+        "df_resid": df_resid,
     }
+
+
+def _sex_specific_slope_fit(fit, imputation_id: int) -> List[Dict[str, object]]:
+    """Extrae las pendientes de PHQ-9 para hombres y mujeres.
+
+    En ``interaction_sex`` el código 1 (hombre) es la referencia y el código 2
+    (mujer) añade el coeficiente de interacción. La varianza de la pendiente de
+    mujeres incluye la covarianza entre ambos términos.
+    """
+    coefs = np.asarray(fit.rx2("coef"), dtype=float)
+    names = list(fit.rx2("coef").names)
+    vcov = np.asarray(fit.rx2("vcov"), dtype=float)
+    n_obs = int(np.asarray(fit.rx2("n_obs"), dtype=int)[0])
+    df_resid = _extract_r_scalar(fit.rx2("df_resid"))
+
+    base_name = "PHQ9_TOTAL"
+    interaction_candidates = [
+        name
+        for name in names
+        if ":" in name and "PHQ9_TOTAL" in name and "factor(QSSEXO)2" in name
+    ]
+    if base_name not in names or len(interaction_candidates) != 1:
+        raise ValueError(
+            "No se pudieron identificar de forma única las pendientes por sexo: "
+            f"base={base_name in names}, interacciones={interaction_candidates}"
+        )
+
+    base_idx = names.index(base_name)
+    interaction_idx = names.index(interaction_candidates[0])
+    male_estimate = float(coefs[base_idx])
+    male_variance = float(vcov[base_idx, base_idx])
+    female_estimate = float(coefs[base_idx] + coefs[interaction_idx])
+    female_variance = float(
+        vcov[base_idx, base_idx]
+        + vcov[interaction_idx, interaction_idx]
+        + 2.0 * vcov[base_idx, interaction_idx]
+    )
+
+    common = {
+        "imputation_id": imputation_id,
+        "model": "interaction_sex",
+        "n_obs": n_obs,
+        "df_resid": df_resid,
+    }
+    return [
+        {
+            **common,
+            "sex": "Men",
+            "sex_code": 1,
+            "estimate": male_estimate,
+            "variance": male_variance,
+        },
+        {
+            **common,
+            "sex": "Women",
+            "sex_code": 2,
+            "estimate": female_estimate,
+            "variance": female_variance,
+        },
+    ]
 
 
 def _summary_to_frame(
@@ -1102,27 +1185,42 @@ def _build_altitude_strata_adequacy(meta_rows: List[Dict[str, object]]) -> pd.Da
 
 
 def _build_effect_modification_panel(effect_mod_fits: Dict[str, List[Dict[str, object]]]) -> pd.DataFrame:
-    """Panel de modificacion de efecto: Wald conjunto pooled (Rubin D1) por modificador.
-    Marca preespecificados vs exploratorios y aplica correccion de multiplicidad de Holm
-    sobre los exploratorios (no se penaliza a los preespecificados sexo/anio)."""
+    """Panel de modificacion de efecto: Wald conjunto D1 de Li-Rubin por modificador.
+    Marca modificadores informados por teoría vs exploratorios y aplica corrección de
+    multiplicidad de Holm sobre los exploratorios (sexo/año no se incluyen en esa familia)."""
     rows: List[Dict[str, object]] = []
+    modifier_labels = {
+        "interaction_sex": "sex",
+        "interaction_year": "year",
+        "interaction_area": "area",
+        "interaction_riqueza": "wealth",
+        "interaction_dxhta": "dxhta",
+        "interaction_altitud": "altitude",
+    }
     for model_name, fits in effect_mod_fits.items():
         if not fits:
             continue
-        modifier = model_name.replace("interaction_", "")
+        modifier = modifier_labels[model_name]
         pooled = _pool_joint_wald(fits)
         rows.append(
             {
                 "modificador": modifier,
                 "model": model_name,
-                "tipo": "preespecificado" if model_name in EFFECT_MOD_PRESPECIFIED else "exploratorio",
-                "pool_method": "rubin_d1_chisq_approx",
+                "tipo": (
+                    "informado_por_teoria"
+                    if model_name in EFFECT_MOD_THEORY_INFORMED
+                    else "exploratorio"
+                ),
+                "pool_method": "rubin_d1_f",
                 "terms": pooled["terms"],
                 "df_num": pooled["df_num"],
+                "df_den": pooled["df_den"],
                 "statistic": pooled["statistic"],
                 "p_value": pooled["p_value"],
+                "riv": pooled["riv"],
                 "imputations_used": pooled["imputations_used"],
                 "mean_n_obs": pooled["mean_n_obs"],
+                "mean_df_resid": pooled["mean_df_resid"],
             }
         )
     panel = pd.DataFrame(rows)
@@ -1146,6 +1244,75 @@ def _build_effect_modification_panel(effect_mod_fits: Dict[str, List[Dict[str, o
     orden = {m: i for i, m in enumerate(EFFECT_MOD_MODELS)}
     panel["_o"] = panel["model"].map(orden).fillna(99)
     return panel.sort_values("_o").drop(columns="_o").reset_index(drop=True)
+
+
+def _serialize_effect_modification_d1_inputs(
+    effect_mod_fits: Dict[str, List[Dict[str, object]]],
+) -> pd.DataFrame:
+    """Serializa los insumos exactos del D1 para validación externa.
+
+    El JSON generado permite reconstruir Qhat y Uhat por modelo y contrastar el
+    resultado con ``mitml:::.D1`` sin volver a ajustar los modelos.
+    """
+    rows: List[Dict[str, object]] = []
+    for model_name, fits in effect_mod_fits.items():
+        for fit in fits:
+            rows.append(
+                {
+                    "model": model_name,
+                    "imputation_id": int(fit["imputation_id"]),
+                    "terms": list(fit["terms"]),
+                    "coef": np.asarray(fit["coef"], dtype=float).tolist(),
+                    "vcov": np.asarray(fit["vcov"], dtype=float).tolist(),
+                    "n_obs": int(fit["n_obs"]),
+                    "df_resid": float(fit["df_resid"]),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def _pool_sex_specific_slopes(fits: List[Dict[str, object]]) -> pd.DataFrame:
+    """Combina por Rubin las pendientes lineales de PHQ-9 específicas por sexo."""
+    if not fits:
+        return pd.DataFrame(
+            columns=[
+                "sex",
+                "sex_code",
+                "estimate_log_pr",
+                "std_error",
+                "df",
+                "p_value",
+                "pr",
+                "ci_low",
+                "ci_high",
+                "imputations_used",
+                "mean_n_obs",
+            ]
+        )
+
+    frame = pd.DataFrame(fits)
+    rows: List[Dict[str, object]] = []
+    for (sex, sex_code), group in frame.groupby(["sex", "sex_code"], sort=False):
+        pooled = _pool_scalar(
+            group["estimate"].to_numpy(dtype=float),
+            group["variance"].to_numpy(dtype=float),
+        )
+        rows.append(
+            {
+                "sex": sex,
+                "sex_code": int(sex_code),
+                "estimate_log_pr": pooled["estimate"],
+                "std_error": pooled["std_error"],
+                "df": pooled["df"],
+                "p_value": pooled["p_value"],
+                "pr": float(np.exp(pooled["estimate"])),
+                "ci_low": float(np.exp(pooled["ci_low"])),
+                "ci_high": float(np.exp(pooled["ci_high"])),
+                "imputations_used": int(group["imputation_id"].nunique()),
+                "mean_n_obs": float(group["n_obs"].mean()),
+            }
+        )
+    return pd.DataFrame(rows).sort_values("sex_code").reset_index(drop=True)
 
 
 def _pool_logistic_meta(logistic_meta_df: pd.DataFrame) -> pd.DataFrame:
@@ -1262,7 +1429,7 @@ def _pool_bivariate_term_tests(term_fits: List[Dict[str, object]], rao_scott_df:
         pooled = _pool_joint_wald(fits)
         row = {
             "variable": variable,
-            "pool_method": "rubin_d1_chisq_approx",
+            "pool_method": "rubin_d1_f",
             **pooled,
         }
         if variable in rao_lookup:
@@ -1279,10 +1446,13 @@ def _pool_bivariate_term_tests(term_fits: List[Dict[str, object]], rao_scott_df:
                 "pool_method",
                 "terms",
                 "df_num",
+                "df_den",
                 "statistic",
                 "p_value",
+                "riv",
                 "imputations_used",
                 "mean_n_obs",
+                "mean_df_resid",
                 "mean_rao_scott_statistic",
                 "median_rao_scott_p_value",
                 "mean_rao_scott_p_value",
@@ -1293,16 +1463,30 @@ def _pool_bivariate_term_tests(term_fits: List[Dict[str, object]], rao_scott_df:
 
 
 def _pool_joint_wald(fits: List[Dict[str, object]]) -> Dict[str, object]:
-    valid = [fit for fit in fits if fit["terms"]]
-    if not valid:
+    """Combina un Wald multivariado mediante D1 (Li et al., 1991).
+
+    Implementa la misma regla que ``mitml:::.D1``/``mice::D1``: Qbar y Ubar,
+    incremento relativo de varianza multivariado, estadístico F y grados de
+    libertad de Reiter (2007) cuando se dispone de los grados de libertad
+    completos del diseño. No usa la covarianza total como un chi-cuadrado.
+    """
+
+    def empty_result() -> Dict[str, object]:
         return {
             "terms": "",
             "df_num": 0,
+            "df_den": np.nan,
             "statistic": np.nan,
             "p_value": np.nan,
+            "riv": np.nan,
             "imputations_used": 0,
             "mean_n_obs": np.nan,
+            "mean_df_resid": np.nan,
         }
+
+    valid = [fit for fit in fits if fit["terms"]]
+    if not valid:
+        return empty_result()
 
     common_terms = sorted(set(valid[0]["terms"]).intersection(*(set(fit["terms"]) for fit in valid[1:])))
     common_terms = [
@@ -1315,62 +1499,112 @@ def _pool_joint_wald(fits: List[Dict[str, object]]) -> Dict[str, object]:
         )
     ]
     if not common_terms:
-        return {
-            "terms": "",
-            "df_num": 0,
-            "statistic": np.nan,
-            "p_value": np.nan,
-            "imputations_used": 0,
-            "mean_n_obs": np.nan,
-        }
+        return empty_result()
 
     coef_matrix = []
     vcov_mats = []
     mean_n_obs = []
+    df_resids = []
     for fit in valid:
         index = {term: idx for idx, term in enumerate(fit["terms"])}
         selection = [index[term] for term in common_terms]
         coef_matrix.append(np.asarray(fit["coef"], dtype=float)[selection])
         vcov = np.asarray(fit["vcov"], dtype=float)
-        vcov_mats.append(np.nan_to_num(vcov[np.ix_(selection, selection)], nan=0.0, posinf=0.0, neginf=0.0))
+        selected_vcov = vcov[np.ix_(selection, selection)]
+        if not np.isfinite(selected_vcov).all():
+            return empty_result()
+        vcov_mats.append(selected_vcov)
         mean_n_obs.append(float(fit["n_obs"]))
+        if np.isfinite(float(fit.get("df_resid", np.nan))):
+            df_resids.append(float(fit["df_resid"]))
 
-    q = len(common_terms)
+    k = len(common_terms)
     m = len(coef_matrix)
     q_matrix = np.vstack(coef_matrix)
     q_bar = q_matrix.mean(axis=0)
     u_bar = np.mean(np.stack(vcov_mats), axis=0)
     if m > 1:
         b_mat = np.atleast_2d(np.cov(q_matrix, rowvar=False, ddof=1))
-        if q == 1:
+        if k == 1:
             b_mat = np.asarray([[float(b_mat.squeeze())]], dtype=float)
     else:
-        b_mat = np.zeros((q, q), dtype=float)
-    total = u_bar + (1.0 + (1.0 / m)) * b_mat
-    total = np.nan_to_num(total, nan=0.0, posinf=0.0, neginf=0.0)
-    total = np.clip(total, -1e12, 1e12)
-    if not np.isfinite(total).all():
-        statistic = np.nan
-        p_value = np.nan
+        b_mat = np.zeros((k, k), dtype=float)
+
+    try:
+        u_inv = np.linalg.solve(u_bar, np.eye(k, dtype=float))
+    except np.linalg.LinAlgError:
+        u_inv = np.linalg.pinv(u_bar, rcond=1e-12)
+
+    riv = float((1.0 + (1.0 / m)) * np.trace(b_mat @ u_inv) / k)
+    # D1 no trunca el RIV, pero un negativo diminuto por redondeo debe ser cero.
+    if -1e-12 < riv < 0:
+        riv = 0.0
+
+    if not np.isfinite(riv) or (1.0 + riv) <= 0:
+        return empty_result()
+
+    with np.errstate(all="ignore"):
+        statistic = float(q_bar.T @ u_inv @ q_bar / (k * (1.0 + riv)))
+
+    mean_df_resid = float(np.mean(df_resids)) if df_resids else np.nan
+    df_den = _d1_denominator_df(k=k, m=m, riv=riv, df_com=mean_df_resid)
+    if np.isfinite(statistic):
+        if np.isfinite(df_den):
+            p_value = float(stats.f.sf(max(statistic, 0.0), k, df_den))
+        else:
+            # F(k, infinito) equivale a chi-cuadrado(k)/k.
+            p_value = float(stats.chi2.sf(max(statistic, 0.0) * k, k))
     else:
-        ridge = max(float(np.max(np.abs(np.diag(total)))) * 1e-8, 1e-8)
-        total_reg = total + np.eye(q, dtype=float) * ridge
-        with np.errstate(all="ignore"):
-            try:
-                solution = np.linalg.solve(total_reg, q_bar)
-            except np.linalg.LinAlgError:
-                solution = np.linalg.pinv(total_reg, rcond=1e-10) @ q_bar
-            statistic = float(q_bar.T @ solution)
-        p_value = float(1 - stats.chi2.cdf(statistic, df=q)) if np.isfinite(statistic) else np.nan
+        p_value = np.nan
 
     return {
         "terms": ",".join(common_terms),
-        "df_num": q,
+        "df_num": k,
+        "df_den": df_den,
         "statistic": statistic,
         "p_value": p_value,
+        "riv": riv,
         "imputations_used": m,
         "mean_n_obs": round(float(np.mean(mean_n_obs)), 2),
+        "mean_df_resid": mean_df_resid,
     }
+
+
+def _d1_denominator_df(k: int, m: int, riv: float, df_com: float = np.nan) -> float:
+    """Grados de libertad de D1, idénticos a ``mitml:::.D1``.
+
+    Usa la corrección de muestra pequeña de Reiter (2007) cuando ``df_com`` es
+    finito. En ausencia de variación entre imputaciones, la referencia es
+    F(k, infinito).
+    """
+    if m <= 1 or riv <= 1e-12:
+        return np.inf
+
+    t_value = float(k * (m - 1))
+    if np.isfinite(df_com):
+        if t_value <= 4:
+            return np.nan
+        a = riv * t_value / (t_value - 2.0)
+        vstar = ((df_com + 1.0) / (df_com + 3.0)) * df_com
+        c0 = 1.0 / (t_value - 4.0)
+        c1 = vstar - 2.0 * (1.0 + a)
+        c2 = vstar - 4.0 * (1.0 + a)
+        if abs(c1) <= 1e-12 or abs(c2) <= 1e-12:
+            return np.nan
+        z = (
+            1.0 / c2
+            + c0 * (a**2 * c1 / ((1.0 + a) ** 2 * c2))
+            + c0 * (8.0 * a**2 * c1 / ((1.0 + a) * c2**2) + 4.0 * a**2 / ((1.0 + a) * c2))
+            + c0 * (4.0 * a**2 / (c2 * c1) + 16.0 * a**2 * c1 / c2**3)
+            + c0 * (8.0 * a**2 / c2**2)
+        )
+        if not np.isfinite(z) or z <= 0:
+            return np.nan
+        return float(4.0 + 1.0 / z)
+
+    if t_value > 4:
+        return float(4.0 + (t_value - 4.0) * (1.0 + (1.0 - 2.0 / t_value) / riv) ** 2)
+    return float(t_value * (1.0 + 1.0 / k) * (1.0 + 1.0 / riv) ** 2 / 2.0)
 
 
 def _pool_spline_nonlinearity(spline_meta_df: pd.DataFrame) -> pd.DataFrame:

@@ -18,9 +18,9 @@ authors:
   - family-names: "Velarde-Mera"
     given-names: "Miguel Angel"
     orcid: "https://orcid.org/0009-0009-6073-9767"
-version: "1.0.0"
+version: "1.2.0"
 doi: "10.5281/zenodo.21328300"
-date-released: "2026-07-12"
+date-released: "2026-07-23"
 license: MIT
 repository-code: "https://github.com/vicente-main/endes-phq9-blood-pressure"
 url: "https://doi.org/10.5281/zenodo.21328300"
